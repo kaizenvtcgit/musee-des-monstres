@@ -8,7 +8,7 @@ import {
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { straightLine, pathLineCost } from './pathline.js';
-import { shelterSpots, stepShelterVisit } from './shelterpath.js';
+import { shelterSpots, stepShelterVisit, partlyInCave, shelterOverhang } from './shelterpath.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 
 const fmtCost = (n) => Math.round(n).toLocaleString('fr-FR');
@@ -370,7 +370,7 @@ export class GameScene extends Phaser.Scene {
     for (const d of e.decor ?? []) if (!ENCLOSURE_DECOR[d.type]?.low) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     const sh = e.shelter;
     const shN = shelterSize(sh), shHalf = (shN - 1) / 2;
-    if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: SHELTER_RADIUS * (shN / 2) });
+    if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: SHELTER_RADIUS * (shN / 2) + shelterOverhang(sh.family) });
     if (!entry.w || entry.wEnc !== e.id) {
       entry.wEnc = e.id;
       const fx = monsterFx(m.speciesId);
@@ -379,16 +379,20 @@ export class GameScene extends Phaser.Scene {
     }
     entry.atShelter = false;
     entry.caveDark = 0;
+    entry.caveDepth = null;
     entry.sv ??= { stage: null };
     if (sh && (m.shelter || entry.sv.stage)) {
       // taking refuge for real (src/render/shelterpath.js): around the rock, in front of the cave,
       // straight in, rest at the mouth or deep inside; then out again, facing the viewer
       const w = entry.w;
       entry.sv.x = w.x; entry.sv.y = w.y;
-      const visit = stepShelterVisit(entry.sv, shelterSpots(sh, shN), m.shelter, w.speed ?? 0.7, dt);
+      const spots = shelterSpots(sh, shN);
+      const visit = stepShelterVisit(entry.sv, spots, m.shelter, w.speed ?? 0.7, dt);
       w.x = entry.sv.x; w.y = entry.sv.y;
       entry.atShelter = visit.atRest;
       entry.caveDark = visit.dark;
+      // partly in: just behind the rock front of the shelter (drawDecor), which hides what is inside
+      if (partlyInCave(visit, spots, w.y, r * 1.5)) entry.caveDepth = tileToScreen(sh.tx + shHalf, sh.ty + shHalf).y + 4 * shN - 0.5;
       if (entry.sv.stage) {
         w.goal = null;
         w.rest = 1 + Math.random(); // when it comes out, a short pause before walking away
@@ -592,7 +596,8 @@ export class GameScene extends Phaser.Scene {
       const bob = animated ? 0 : Math.abs(Math.sin(time * 0.006 + entry.phase)) * (look.real ? 1.2 : 3);
       // the ground trembles under the others, not under the heavy monster that shakes it (it would look blurred)
       const tremor = fx.heavy ? 0 : this.fx.tremorAt(p.x, p.y);
-      entry.sprite.setPosition(p.x, p.y + (look.directional ? 0 : 8) - bob + tremor).setDepth(p.y);
+      const depth = entry.caveDepth ?? p.y; // partly in its cave: behind the rock front
+      entry.sprite.setPosition(p.x, p.y + (look.directional ? 0 : 8) - bob + tremor).setDepth(depth);
       const pulse = m.state === 'escaped' ? 1 + 0.08 * Math.sin(time * 0.02) : 1;
       entry.sprite.setScale(look.scale * pulse);
       let shadow = [0.7, 0.7];
@@ -600,7 +605,7 @@ export class GameScene extends Phaser.Scene {
       else if (look.real) shadow = [(entry.sprite.displayWidth / 64) * 0.9, 0.9];
       // no shadow on the water under a swimming monster, nor under a ghost
       entry.shadow.setVisible(!swimming && !fx.spectral);
-      entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
+      entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(depth - 0.5).setScale(shadow[0], shadow[1]);
       // in its cave: darker and darker as it goes in, until only its eyes still glow
       const hidden = 1 - (entry.caveDark ?? 0);
       entry.hideK = (entry.hideK ?? 1) + (hidden - (entry.hideK ?? 1)) * (1 - Math.exp(-dtReal * 4));

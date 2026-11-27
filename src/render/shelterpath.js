@@ -4,16 +4,25 @@
 
 // Where the monster rests "at the entrance", from the shelter's first tile (for a 2 x 2 one; scaled).
 export const SHELTER_ENTRANCE = 1.15;
+// Where the rock face (the mouth's outline) stands, from the centre, for a 3 x 3 shelter (scaled).
+export const SHELTER_FACE = 1.25;
+// the big caves of the yeti (ice) and of the golem (forest) stand further out than their 3 x 3 tiles
+export const SHELTER_FACE_BY_FAMILY = { ice: 1.65, forest: 1.7 };
+// how far the rock reaches past its tiles (monsters walk around it)
+export const shelterOverhang = (family) => ((SHELTER_FACE_BY_FAMILY[family] ?? SHELTER_FACE) - SHELTER_FACE);
 
 export function shelterSpots(sh, n) {
   const half = (n - 1) / 2;
   const cx = sh.tx + half, cy = sh.ty + half;
-  const mouthY = cy + (SHELTER_ENTRANCE - 0.5) * (n / 2);
+  const face = (SHELTER_FACE_BY_FAMILY[sh.family] ?? SHELTER_FACE) * (n / 3);
+  const mouthY = cy + Math.max((SHELTER_ENTRANCE - 0.5) * (n / 2), face - 0.35);
+  const o = shelterOverhang(sh.family) * (n / 3);
   return {
     cx, cy, n,
-    rect: { x0: sh.tx - 0.5, x1: sh.tx + n - 0.5, y0: sh.ty - 0.5, y1: sh.ty + n - 0.5 },
+    rect: { x0: sh.tx - 0.5 - o, x1: sh.tx + n - 0.5 + o, y0: sh.ty - 0.5 - o, y1: sh.ty + n - 0.5 + o },
+    faceY: cy + face, // the rock face around the mouth
     mouth: { x: cx, y: mouthY }, // resting at the entrance, still in the light
-    front: { x: cx, y: mouthY + 0.8 }, // just outside, facing the cave
+    front: { x: cx, y: Math.max(mouthY + 0.8, cy + face + 0.5) }, // just outside, facing the cave
     deep: { x: cx, y: mouthY - 0.3 * n }, // inside, in the dark, still seen through the opening (its eyes)
   };
 }
@@ -30,13 +39,14 @@ function crosses(a, b, r) {
 // Waypoints from p to the front of the cave that never cut through the rock.
 function routeToFront(p, s) {
   if (!crosses(p, s.front, s.rect)) return [s.front];
-  const side = { x: s.cx + Math.sign(p.x - s.cx || 1) * (s.n / 2 + 0.8), y: s.front.y };
+  const side = { x: s.cx + Math.sign(p.x - s.cx || 1) * (s.rect.x1 - s.cx + 0.3), y: s.front.y };
   if (!crosses(p, side, s.rect)) return [side, s.front];
   return [{ x: side.x, y: p.y }, side, s.front];
 }
 
 // v: { stage, x, y } kept between calls (stage null = not visiting). want: null, 'entrance' or 'inside'.
-// Returns { atRest, dark } where dark goes from 0 at the mouth to 1 deep inside.
+// Returns { atRest, dark, tunnel } where dark goes from 0 at the mouth to 1 deep inside and tunnel says
+// it is on the line through the mouth (in front of it or in it).
 export function stepShelterVisit(v, s, want, speed, dt) {
   let budget = speed * dt;
   const moveTo = (t) => {
@@ -72,5 +82,10 @@ export function stepShelterVisit(v, s, want, speed, dt) {
 
   const tunnel = Math.abs(v.x - s.cx) < 1e-6;
   const dark = tunnel ? Math.max(0, Math.min(1, (s.mouth.y - v.y) / (s.mouth.y - s.deep.y))) : 0;
-  return { atRest: v.stage === 'rest', dark };
+  return { atRest: v.stage === 'rest', dark, tunnel: !!v.stage && tunnel };
 }
+
+// A monster partly in the cave is drawn behind the rock front (the arch then hides what is inside,
+// the rest of it shows in the opening and on the ground in front); fully out, it is drawn normally.
+// radius: about half the monster's length.
+export const partlyInCave = (visit, s, y, radius) => visit.tunnel && y < s.faceY + radius;

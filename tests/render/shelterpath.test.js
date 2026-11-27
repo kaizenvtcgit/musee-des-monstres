@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shelterSpots, stepShelterVisit } from '../../src/render/shelterpath.js';
+import { shelterSpots, stepShelterVisit, partlyInCave } from '../../src/render/shelterpath.js';
 
 // a 3 x 3 shelter on tiles 4..6 x 4..6: its mouth faces +y (down-left on screen)
 const sh = { tx: 4, ty: 4 };
@@ -72,6 +72,22 @@ describe('stepShelterVisit', () => {
     expect(v.stage).toBeNull();
     expect(alwaysForward).toBe(true);
     expect(v.y).toBeCloseTo(spots.front.y, 5);
+  });
+
+  it('resting at the entrance it is partly in the cave (behind the rock front); walking around, it is not', () => {
+    const v = { stage: null, x: 8, y: 9 };
+    const r = run(v, 'entrance', 30);
+    expect(partlyInCave(r, spots, v.y, 0.6)).toBe(true);
+    const out = { stage: null, x: 8, y: 9 };
+    const r2 = stepShelterVisit(out, spots, 'inside', 0.7, 0.05); // just starting to go around the rock
+    expect(partlyInCave(r2, spots, out.y, 0.6)).toBe(false);
+  });
+
+  it('the big ice cave reaches further out: its front spot is still outside the rock, its mouth under the arch', () => {
+    const s = shelterSpots({ tx: 4, ty: 4, family: 'ice' }, 3);
+    expect(s.front.y).toBeGreaterThan(s.faceY);
+    expect(s.mouth.y).toBeLessThan(s.faceY);
+    expect(s.front.y).toBeGreaterThan(s.rect.y1);
   });
 
   it('called off on the way: it simply stops where it is', () => {
