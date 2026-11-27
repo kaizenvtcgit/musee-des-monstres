@@ -77,6 +77,102 @@ function dissolveBottom(o, frame, feetY, view, hover, { height, edge }, phase) {
   o.putImageData(img, 0, 0);
 }
 
+const clipTime = (c, i, frames, reverse) => (c.duration * (reverse ? (frames - i) % frames : i)) / frames;
+
+function setEmissive(k) {
+  gltf.scene.traverse((m) => {
+    if (!m.isMesh) return;
+    m.userData.emissive0 ??= m.material.emissiveIntensity;
+    m.material.emissiveIntensity = m.userData.emissive0 * k;
+  });
+}
+
+// Every material shows only its emissive light (the body is black, so it still hides what is behind it).
+function emissiveOnly() {
+  const saved = [];
+  gltf.scene.traverse((m) => {
+    if (!m.isMesh) return;
+    saved.push([m, m.material]);
+    const g = m.material.clone();
+    g.map = null;
+    g.color = new THREE.Color(0);
+    g.roughness = 1;
+    g.metalness = 0;
+    m.material = g;
+  });
+  const lights = scene.children.filter((c) => c.isLight);
+  lights.forEach((l) => { l.userData.i = l.intensity; l.intensity = 0; });
+  const env = scene.environment;
+  scene.environment = null;
+  return () => {
+    saved.forEach(([m, mat]) => { m.material.dispose(); m.material = mat; });
+    lights.forEach((l) => { l.intensity = l.userData.i; });
+    scene.environment = env;
+  };
+}
+
+// The last render as pure light: black is transparent, light is opaque; with a blurred halo around it.
+const lightC = document.createElement('canvas');
+const haloC = document.createElement('canvas');
+function lightOnly(frame, radius) {
+  lightC.width = lightC.height = frame;
+  const g = lightC.getContext('2d', { willReadFrequently: true });
+  g.drawImage(renderer.domElement, 0, 0, frame, frame);
+  const img = g.getImageData(0, 0, frame, frame);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) d[i + 3] = Math.max(d[i], d[i + 1], d[i + 2]);
+  g.putImageData(img, 0, 0);
+  haloC.width = haloC.height = frame;
+  const h = haloC.getContext('2d');
+  h.clearRect(0, 0, frame, frame);
+  h.filter = `blur(${radius}px)`;
+  h.drawImage(lightC, 0, 0);
+  h.drawImage(lightC, 0, 0);
+  h.filter = 'none';
+  h.drawImage(lightC, 0, 0); // sharp core on top of the halo
+  return haloC;
+}
+
+// Stacks the sheets of the 8 directions into one image (rows of direction 0, then 1...).
+window.stackSheets = async (urls, format = 'image/webp', quality = 0.82) => {
+  const imgs = await Promise.all(urls.map((u) => new Promise((ok) => { const im = new Image(); im.onload = () => ok(im); im.src = u; })));
+  const c = document.createElement('canvas');
+  c.width = imgs[0].width;
+  c.height = imgs.reduce((h, im) => h + im.height, 0);
+  const g = c.getContext('2d');
+  let y = 0;
+  for (const im of imgs) { g.drawImage(im, 0, y); y += im.height; }
+  return c.toDataURL(format, quality);
+};
+
+// Where some bones are on screen (frame px) in every frame of a clip, for direction `dir`; and their height
+// above the ground (model units). Used to time and place dust, pebbles and sounds (render.mjs: events).
+window.probeBones = ({ clip, dir, frames, view, frame = 256, feetY = 216, reverse = false, bones }) => {
+  window.renderSheet({ clip, dir, frames: 1, cols: 1, view, frame, feetY }); // sets the camera
+  const c = gltf.animations.find((a) => a.name === clip);
+  mixer.stopAllAction();
+  mixer.clipAction(c).play();
+  const out = [];
+  const v = new THREE.Vector3();
+  for (let i = 0; i < frames; i++) {
+    mixer.setTime(clipTime(c, i, frames, reverse));
+    gltf.scene.updateMatrixWorld(true);
+    const row = {};
+    for (const b of bones) {
+      gltf.scene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(b)).getWorldPosition(v);
+      const h = v.y - box.min.y;
+      const g = new THREE.Vector3(v.x, box.min.y, v.z).project(cam); // the ground right below the bone
+      v.project(cam);
+      row[b] = {
+        x: Math.round((v.x + 1) / 2 * frame), y: Math.round((1 - v.y) / 2 * frame), h: +h.toFixed(3),
+        gx: Math.round((g.x + 1) / 2 * frame), gy: Math.round((1 - g.y) / 2 * frame),
+      };
+    }
+    out.push(row);
+  }
+  return out;
+};
+
 // Adds a soft glow around the emissive parts: renders them alone, blurs them, adds them on top.
 function addBloom(o, frame, { strength, radius, tint = [1, 1, 1] }) {
   const saved = [];
@@ -142,11 +238,18 @@ window.loadModel = async (url) => {
 // `bloom`: { strength, radius, tint } soft glow around the emissive parts only (eyes...).
 // `dissolve`: { height, edge } the lowest part of the model (fraction of its height) fades out through a
 // moving noise, as if it dissolved into mist; `edge` = how ragged the fade is (0..1).
+// `reverse`: play the clip backwards (a walk cycle authored the wrong way round).
+// `emissiveScale`: multiplies the glow of the emissive parts (the rest of the material is untouched).
+// `glowOnly`: render only the emissive parts (hidden behind the body where they should be), blurred into a
+// halo of `glowRadius` px: a separate light layer the game brightens or dims (see monsterfx.js).
 window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216, groundY = null, waterline = null,
-  hover = 0, bloom = null, dissolve = null, alphaLevels = 0, format = 'image/webp', quality = 0.82 }) => {
+  hover = 0, bloom = null, dissolve = null, alphaLevels = 0, format = 'image/webp', quality = 0.82,
+  reverse = false, emissiveScale = 1, glowOnly = false, glowRadius = 2 }) => {
   if (waterline !== null) groundY = box.min.y + waterline;
   if (hover) groundY = box.min.y - hover;
   renderer.setSize(frame * SS, frame * SS);
+  setEmissive(emissiveScale);
+  const restoreGlow = glowOnly ? emissiveOnly() : null;
   // d1 faces the viewer; each next direction turns 45 degrees (see directionIndex in sprites.js)
   pivot.rotation.y = THREE.MathUtils.degToRad((dir - 1) * 45);
   const e = THREE.MathUtils.degToRad(30);
@@ -167,7 +270,7 @@ window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216,
   ctx.imageSmoothingQuality = 'high';
   ctx.clearRect(0, 0, out.width, out.height);
   for (let i = 0; i < frames; i++) {
-    mixer.setTime((c.duration * i) / frames); // exactly one loop of the clip
+    mixer.setTime(clipTime(c, i, frames, reverse)); // exactly one loop of the clip
     const x = frame * (i % cols), y = frame * Math.floor(i / cols);
     if (waterline !== null) {
       // under the surface: tinted and faint
@@ -186,6 +289,10 @@ window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216,
     }
     renderer.render(scene, cam);
     renderer.clippingPlanes = [];
+    if (glowOnly) {
+      ctx.drawImage(lightOnly(frame, glowRadius), x, y);
+      continue;
+    }
     if (!bloom && !dissolve) {
       ctx.drawImage(renderer.domElement, x, y, frame, frame);
       continue;
@@ -198,6 +305,8 @@ window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216,
     if (bloom) addBloom(o, frame, bloom);
     ctx.drawImage(one, x, y);
   }
+  if (restoreGlow) restoreGlow();
+  setEmissive(1);
   if (alphaLevels) {
     const img = ctx.getImageData(0, 0, out.width, out.height);
     const step = 255 / (alphaLevels - 1);

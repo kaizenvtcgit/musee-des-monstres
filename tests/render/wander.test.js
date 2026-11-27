@@ -64,3 +64,17 @@ describe('stepWander', () => {
     expect(dist(a, b)).toBeGreaterThanOrEqual(1.1 - 1e-6);
   });
 });
+
+describe('per-monster pace', () => {
+  it('a slow monster walks at its own speed and rests as long as asked', async () => {
+    const { createWanderer, stepWander } = await import('../../src/render/wander.js');
+    const bounds = { minX: 0, maxX: 10, minY: 0, maxY: 10 };
+    const w = createWanderer({ x: 1, y: 1 }, 0.4, { speed: 0.45, pause: [8, 8] });
+    w.goal = { x: 9, y: 1 };
+    stepWander(w, [], bounds, 1, () => 0.5);
+    expect(w.x).toBeCloseTo(1.45, 5);
+    w.goal = { x: 1.6, y: 1 };
+    stepWander(w, [], bounds, 1, () => 0.5); // arrives: rests 8 s
+    expect(w.rest).toBeCloseTo(8, 5);
+  });
+});

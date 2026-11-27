@@ -4,7 +4,8 @@ export const SPECIES = {
   dragonnet: { id: 'dragonnet', habitat: 'lava', minArea: 6, appeal: 10, decayPerMin: 6, special: 'hotTemper' },
   kraken: { id: 'kraken', habitat: 'water', minArea: 12, appeal: 7, decayPerMin: 3, special: null },
   spectre: { id: 'spectre', habitat: 'dark', minArea: 6, appeal: 8, decayPerMin: 4, special: 'phases' },
-  golem: { id: 'golem', habitat: 'forest', minArea: 4, appeal: 4, decayPerMin: 1.5, special: null },
+  // speed: how fast it wanders when escaped (x the base speed); the golem is slow and heavy
+  golem: { id: 'golem', habitat: 'forest', minArea: 4, appeal: 4, decayPerMin: 1.5, special: null, speed: 0.45 },
   yeti: { id: 'yeti', habitat: 'ice', minArea: 8, appeal: 7, decayPerMin: 3, special: 'lovesVisitors' },
 };
 

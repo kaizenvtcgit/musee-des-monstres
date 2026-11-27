@@ -26,6 +26,9 @@ export const DECOR_URLS = Object.fromEntries(
 // - fly: optional, looping, replaces walk while the monster is escaped;
 // - threat: optional, looping, replaces idle while the monster is escaped;
 // - any other kind (flap, stretch, look, tail...): optional one-shot "idle action" played now and then at rest.
+// "<speciesId>-<kind>-dirs.webp": the 8 directions of an animation stacked in one sheet (row = direction);
+// "<speciesId>_glow-<kind>-dirs.webp": its light layer (glowing parts only, 128 px frames, see monsterfx.js);
+// "<speciesId>-events.json": frames where effects happen (a foot landing...), made by render.mjs.
 const animFiles = import.meta.glob('../assets/anims/*.{png,webp}', { eager: true, query: '?url', import: 'default' });
 export const ANIM_URLS = Object.fromEntries(
   Object.entries(animFiles).map(([path, url]) => [path.split('/').pop().replace(/\.(png|webp)$/, ''), url]),
@@ -38,6 +41,9 @@ const ANIM_FPS = {
   dragonnet: { walk: 10, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
   kraken: { walk: 10, idle: 4, threat: 6, look: 5, wiggle: 6, sleep: 4 },
   spectre: { walk: 6, idle: 3, threat: 4, look: 3, haunt: 4, sleep: 2 },
+  golem: {
+    walk: 8, idle: 3, look: 3, stretch: 12 / 3.5, chestbeat: 5, slam: 6, threat: 4, sleep: 8 / 5, wakeup: 4, sitdown: 4, shake: 5,
+  },
   // every "person-..." sheet (Quaternius characters, see scripts/render-model/render.mjs)
   person: { walk: 7.2, run: 8, idle: 2.88, wave: 5.76 },
 };
@@ -55,19 +61,53 @@ const FRAME_SIZE = { spectre: 176 };
 // - actionLoops: idle actions played several times in a row;
 // - actionGap: [min, max] game seconds of plain idling between two idle actions;
 // - crossfadeMs: blend the old pose into the new one when the animation changes;
-// - spectral: see-through floating ghost (src/render/spectral.js): no shadow, mist, glow, fade in/out.
+// - spectral: see-through floating ghost (src/render/monsterfx.js): no shadow, mist, glow, fade in/out.
+// - idleKinds: only these kinds are random idle actions (the others are played on purpose);
+// - walkSpeed: tiles / s matching the stride of its walk animation (no sliding feet); restRange: [min, max]
+//   seconds it stays put between two strolls in its enclosure;
+// - statue: [min, max] seconds it may stand perfectly still (an idle action);
+// - sleep: { chance, loops: [min, max] }: an idle action may be a nap: sit down, sleep, wake up;
+// - angry: { below, kinds }: under this happiness, these actions join the idle ones;
+// - escapedKinds: what it does when it stops while escaped (one of them, picked at each stop);
+// - glow: its light layer (eyes, cracks): { base } brightness at rest (0..1);
+// - heavy: dust, pebbles, tremors and sounds on the moments of its events file.
 export const MONSTER_FX = {
   spectre: {
     idleAlso: ['threat'], actionLoops: { sleep: 2 }, actionGap: [6, 15], crossfadeMs: 260, spectral: true,
+  },
+  golem: {
+    crossfadeMs: 320,
+    idleKinds: ['look', 'stretch', 'chestbeat', 'shake'],
+    actionGap: [12, 28],
+    walkSpeed: 0.45,
+    restRange: [6, 16],
+    statue: [10, 20],
+    sleep: { chance: 0.25, loops: [3, 5] },
+    angry: { below: 35, kinds: ['threat', 'slam'] },
+    escapedKinds: ['threat', 'slam'],
+    glow: { base: 0.5 },
+    heavy: true,
   },
 };
 const baseSpecies = (species) => species.replace(/_[a-z]+$/, '');
 export const monsterFx = (species) => MONSTER_FX[baseSpecies(species)] ?? {};
 
 function parseAnimName(name) {
+  const stacked = name.match(/^(.+)-([a-z]+)-dirs$/);
+  if (stacked) return { species: stacked[1], kind: stacked[2], dir: 'all' };
   const m = name.match(/^(.+)-([a-z]+)-d(\d)$/);
   return m ? { species: m[1], kind: m[2], dir: Number(m[3]) } : null;
 }
+
+// Light layers ("golem_glow") are rendered at half size.
+export const GLOW_FRAME = 128;
+const isGlow = (species) => species.endsWith('_glow');
+
+// Effect moments of the animations ({ golem: { walk: { frames, events: [{ f, type, at }] } } }).
+const eventFiles = import.meta.glob('../assets/anims/*-events.json', { eager: true, import: 'default' });
+export const MONSTER_EVENTS = Object.fromEntries(
+  Object.entries(eventFiles).map(([path, data]) => [path.split('/').pop().replace('-events.json', ''), data]),
+);
 
 function fpsOf(species, kind) {
   if (isPerson(species)) return ANIM_FPS.person[kind] ?? 6;
@@ -83,7 +123,8 @@ export function preloadSprites(scene) {
     else scene.load.image(`img-${name}`, url);
   }
   for (const [name, url] of Object.entries(ANIM_URLS)) {
-    const size = isPerson(name) ? PERSON_FRAME : FRAME_SIZE[baseSpecies(parseAnimName(name)?.species ?? '')] ?? 256;
+    const species = parseAnimName(name)?.species ?? '';
+    const size = isPerson(name) ? PERSON_FRAME : isGlow(species) ? GLOW_FRAME : FRAME_SIZE[baseSpecies(species)] ?? 256;
     scene.load.spritesheet(`anim-${name}`, url, { frameWidth: size, frameHeight: size });
   }
 }
@@ -93,12 +134,38 @@ export function createAnimations(scene) {
   for (const name of Object.keys(ANIM_URLS)) {
     const info = parseAnimName(name);
     if (!info || scene.anims.exists(name)) continue;
+    if (info.dir === 'all') {
+      if (!isGlow(info.species)) createStackedAnimations(scene, name, info);
+      continue;
+    }
     scene.anims.create({
       key: name,
       frames: scene.anims.generateFrameNumbers(`anim-${name}`),
       frameRate: fpsOf(info.species, info.kind),
       repeat: LOOPING.has(info.kind) ? -1 : (monsterFx(info.species).actionLoops?.[info.kind] ?? 1) - 1,
     });
+  }
+}
+
+// One animation per direction from a stacked sheet ("golem-walk-d3" = row 3 of "golem-walk-dirs"). The wake-up
+// sheet also gives "sitdown": the same frames backwards (falling asleep).
+function createStackedAnimations(scene, name, { species, kind }) {
+  const tex = scene.textures.get(`anim-${name}`);
+  const frameW = FRAME_SIZE[baseSpecies(species)] ?? 256;
+  const cols = tex.getSourceImage().width / frameW;
+  const fx = monsterFx(species);
+  for (let dir = 0; dir < 8; dir++) {
+    const frames = scene.anims.generateFrameNumbers(`anim-${name}`, { start: dir * cols, end: dir * cols + cols - 1 });
+    scene.anims.create({
+      key: `${species}-${kind}-d${dir}`,
+      frames,
+      frameRate: fpsOf(species, kind),
+      // a nap lasts several loops of the sleep animation (MONSTER_FX sleep)
+      repeat: LOOPING.has(kind) || (kind === 'sleep' && fx.sleep) ? -1 : (fx.actionLoops?.[kind] ?? 1) - 1,
+    });
+    if (kind === 'wakeup') {
+      scene.anims.create({ key: `${species}-sitdown-d${dir}`, frames: [...frames].reverse(), frameRate: fpsOf(species, 'sitdown'), repeat: 0 });
+    }
   }
 }
 
@@ -110,9 +177,10 @@ export function idleActions(scene, speciesId) {
     const fx = monsterFx(speciesId);
     for (const name of Object.keys(ANIM_URLS)) {
       const info = parseAnimName(name);
-      if (!info || info.species !== speciesId || info.dir !== 0) continue;
+      if (!info || info.species !== speciesId || (info.dir !== 0 && info.dir !== 'all')) continue;
       if (LOOPING.has(info.kind) && !fx.idleAlso?.includes(info.kind)) continue;
-      const anim = scene.anims.get(name);
+      if (fx.idleKinds && !fx.idleKinds.includes(info.kind)) continue; // the others are played on purpose
+      const anim = scene.anims.get(`${speciesId}-${info.kind}-d0`);
       const loops = fx.actionLoops?.[info.kind] ?? 1;
       if (anim) list.push({ kind: info.kind, duration: (loops * anim.frames.length) / anim.frameRate });
     }

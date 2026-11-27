@@ -4,10 +4,11 @@ import { generateTextures } from './textures.js';
 import {
   preloadSprites, resolveMonsterTexture, realKey, directionIndex,
   createAnimations, hasAnimation, hasFlyAnimation, hasThreatAnimation, idleActions, directionalOriginY,
-  visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y, monsterFx,
+  visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y, monsterFx, MONSTER_EVENTS,
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { MonsterFX } from './monsterfx.js';
+import { Sounds } from './sound.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
 // Enclosure decoration images (scripts/render-model/decor.html): size, ground row, number of variants;
@@ -64,7 +65,8 @@ export class GameScene extends Phaser.Scene {
     this.ghost = this.add.graphics().setDepth(GHOST_DEPTH);
     this.buildingSprites = new Map();
     this.entitySprites = new Map(); // id -> { sprite, bubble, kind }
-    this.fx = new MonsterFX(this); // extra effects of some monsters (ghost mist, crossfades)
+    this.fx = new MonsterFX(this); // extra effects of some monsters (ghost mist, crossfades, golem dust)
+    this.sounds = new Sounds(this); // synthesized sound effects (src/render/sound.js)
     this.lastGridVersion = -1;
     this.createSurroundings();
 
@@ -324,41 +326,95 @@ export class GameScene extends Phaser.Scene {
     for (const d of e.decor ?? []) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     if (!entry.w || entry.wEnc !== e.id) {
       entry.wEnc = e.id;
-      entry.w = createWanderer(findFreeSpot(bounds, others, r, Math.random), r);
+      const fx = monsterFx(m.speciesId);
+      entry.w = createWanderer(findFreeSpot(bounds, others, r, Math.random), r, { speed: fx.walkSpeed, pause: fx.restRange });
       entry.w.rest = Math.random() * 3;
     }
     stepWander(entry.w, others, bounds, dt, Math.random);
     return { x: entry.w.x, y: entry.w.y };
   }
 
-  // Now and then, a resting animated monster plays an idle action (flap its wings, look around...), then
-  // goes back to its idle loop. Never the same action twice in a row.
-  // `anim`: the animation set ("kraken" or "kraken_water"). Returns the action kind, or null for idling.
-  pickIdleAction(anim, entry, dt) {
-    const actions = idleActions(this, anim);
-    if (!actions.length) return null;
-    const gap = monsterFx(anim).actionGap ?? IDLE_ACTION_GAP;
-    if (entry.action) {
-      entry.actionLeft -= dt;
-      if (entry.actionLeft > 0) return entry.action;
-      entry.action = null;
+  // Now and then, a resting animated monster does something (flap its wings, look around...), then goes
+  // back to its idle loop; never the same thing twice in a row. Some monsters (MONSTER_FX) may also stand
+  // perfectly still for a while ("statue"), take a nap (sit down, sleep, wake up), or show their anger when
+  // unhappy. `anim`: the animation set ("kraken" or "kraken_water"). Returns the kind to play, or null.
+  pickIdleAction(anim, entry, dt, m) {
+    const fx = monsterFx(anim);
+    let actions = idleActions(this, anim);
+    if (fx.angry && m && m.happiness < fx.angry.below) {
+      actions = [...actions, ...fx.angry.kinds.map((kind) => ({ kind, duration: this.animDuration(anim, kind) })).filter((a) => a.duration)];
+    }
+    if (!actions.length && !fx.statue && !fx.sleep) return null;
+    const gap = fx.actionGap ?? IDLE_ACTION_GAP;
+    if (entry.actionQueue?.length) {
+      const head = entry.actionQueue[0];
+      head.left -= dt;
+      if (head.left > 0) {
+        entry.actionProgress = 1 - head.left / head.total;
+        return head.kind;
+      }
+      entry.actionQueue.shift();
+      entry.actionProgress = 0;
+      if (entry.actionQueue.length) return entry.actionQueue[0].kind;
       entry.actionIn = gap[0] + Math.random() * (gap[1] - gap[0]);
       return null;
     }
     if (entry.actionIn == null) entry.actionIn = Math.random() * gap[1];
     entry.actionIn -= dt;
     if (entry.actionIn > 0) return null;
-    const choices = actions.length > 1 ? actions.filter((a) => a.kind !== entry.lastAction) : actions;
-    const a = choices[Math.floor(Math.random() * choices.length)];
-    entry.action = entry.lastAction = a.kind;
-    entry.actionLeft = a.duration;
-    // stay put until the action is over
-    if (entry.w) entry.w.rest = Math.max(entry.w.rest, a.duration + 0.2);
-    return a.kind;
+    const step = (kind, total) => ({ kind, total, left: total });
+    let queue;
+    if (fx.sleep && entry.lastAction !== 'sleep' && Math.random() < fx.sleep.chance) {
+      const [a, b] = fx.sleep.loops;
+      const loops = a + Math.floor(Math.random() * (b - a + 1));
+      const wake = this.animDuration(anim, 'wakeup');
+      queue = [step('sitdown', wake), step('sleep', loops * this.animDuration(anim, 'sleep')), step('wakeup', wake)];
+      entry.lastAction = 'sleep';
+    } else if (fx.statue && entry.lastAction !== 'statue' && Math.random() < 0.3) {
+      queue = [step('statue', fx.statue[0] + Math.random() * (fx.statue[1] - fx.statue[0]))];
+      entry.lastAction = 'statue';
+    } else if (actions.length) {
+      const choices = actions.length > 1 ? actions.filter((a) => a.kind !== entry.lastAction) : actions;
+      const a = choices[Math.floor(Math.random() * choices.length)];
+      queue = [step(a.kind, a.duration)];
+      entry.lastAction = a.kind;
+    } else {
+      entry.actionIn = gap[0];
+      return null;
+    }
+    entry.actionQueue = queue;
+    entry.actionProgress = 0;
+    // stay put until it is over
+    if (entry.w) entry.w.rest = Math.max(entry.w.rest, queue.reduce((t, q) => t + q.total, 0) + 0.2);
+    return queue[0].kind;
+  }
+
+  // Length of one loop of an animation, in game seconds (0 if there is none).
+  animDuration(anim, kind) {
+    const a = this.anims.get(`${anim}-${kind}-d0`);
+    return a ? a.frames.length / a.frameRate : 0;
+  }
+
+  // Effects on the moments of the animation (a foot landing, a slam...), from the events file of the species.
+  animationEvents(entry, anim, sheetKind, p, scale) {
+    const s = entry.sprite;
+    const evs = MONSTER_EVENTS[anim]?.[sheetKind]?.events;
+    if (!evs || !s.anims.currentAnim) return;
+    const key = s.anims.currentAnim.key, idx = s.anims.currentFrame.index - 1;
+    if (key === entry.evKey && idx === entry.evIdx) return;
+    entry.evKey = key;
+    entry.evIdx = idx;
+    for (const e of evs) {
+      if (e.f !== idx) continue;
+      const [dx, dy] = e.at[entry.dir] ?? e.at[0];
+      this.fx.heavyEvent(entry, e.type, p.x + dx * scale, p.y + dy * scale, this.sounds);
+    }
   }
 
   syncEntities(time, dt = 0) {
     const { world } = this;
+    const dtReal = Math.min(0.1, (time - (this.lastSyncTime ?? time)) / 1000); // real seconds, for eased lights
+    this.lastSyncTime = time;
     for (const e of this.decorSmoke ?? []) e.timeScale = world.speed || 0.0001; // smoke follows the game speed
     const alive = new Set();
 
@@ -383,6 +439,7 @@ export class GameScene extends Phaser.Scene {
       const anim = animated && habitatAnim && hasAnimation(this, habitatAnim) ? habitatAnim : m.speciesId;
       const swimming = anim !== m.speciesId;
       const fx = animated ? monsterFx(m.speciesId) : {};
+      let sheetKind = null, heavyKind = null;
       if (enc) {
         ({ x, y } = this.wanderInEnclosure(m, entry, enc, dt));
       } else {
@@ -401,10 +458,21 @@ export class GameScene extends Phaser.Scene {
         if (animated) {
           const walking = time < (entry.walkUntil || 0);
           let kind = walking ? (m.state === 'escaped' && hasFlyAnimation(this, m.speciesId) ? 'fly' : 'walk') : 'idle';
-          if (walking) entry.action = null;
-          else if (m.state === 'escaped' && hasThreatAnimation(this, m.speciesId)) { kind = 'threat'; entry.action = null; }
-          else kind = this.pickIdleAction(anim, entry, dt) || kind;
-          const key = `${anim}-${kind}-d${entry.dir}`;
+          if (walking) {
+            entry.actionQueue = null;
+            entry.escKind = null;
+          } else if (m.state === 'escaped' && fx.escapedKinds) {
+            // each time it stops while escaped, it picks one of its threatening moves
+            entry.escKind ??= fx.escapedKinds[Math.floor(Math.random() * fx.escapedKinds.length)];
+            kind = entry.escKind;
+            entry.actionQueue = null;
+          } else if (m.state === 'escaped' && hasThreatAnimation(this, m.speciesId)) {
+            kind = 'threat';
+            entry.actionQueue = null;
+          } else kind = this.pickIdleAction(anim, entry, dt, m) || kind;
+          // standing perfectly still: the idle pose, frozen
+          sheetKind = kind === 'statue' ? 'idle' : kind;
+          const key = `${anim}-${sheetKind}-d${entry.dir}`;
           const cur = entry.sprite.anims.currentAnim;
           if (!cur || cur.key !== key) {
             // keep the stride going when only the direction changes
@@ -413,7 +481,8 @@ export class GameScene extends Phaser.Scene {
             if (fx.crossfadeMs && cur) this.fx.beginCrossfade(entry);
             entry.sprite.play({ key, startFrame: frame });
           }
-          entry.sprite.anims.timeScale = world.speed || 0.0001;
+          entry.sprite.anims.timeScale = kind === 'statue' ? 0.0001 : world.speed || 0.0001;
+          heavyKind = kind;
         }
       } else {
         const dx = p.x - entry.lastX;
@@ -423,11 +492,11 @@ export class GameScene extends Phaser.Scene {
       }
       entry.lastX = p.x;
       const bob = animated ? 0 : Math.abs(Math.sin(time * 0.006 + entry.phase)) * (look.real ? 1.2 : 3);
-      entry.sprite.setPosition(p.x, p.y + (look.directional ? 0 : 8) - bob).setDepth(p.y);
+      entry.sprite.setPosition(p.x, p.y + (look.directional ? 0 : 8) - bob + this.fx.tremorAt(p.x, p.y)).setDepth(p.y);
       const pulse = m.state === 'escaped' ? 1 + 0.08 * Math.sin(time * 0.02) : 1;
       entry.sprite.setScale(look.scale * pulse);
       let shadow = [0.7, 0.7];
-      if (look.directional) shadow = [1.3, 1.0];
+      if (look.directional) shadow = fx.heavy ? [1.75, 1.3] : [1.3, 1.0];
       else if (look.real) shadow = [(entry.sprite.displayWidth / 64) * 0.9, 0.9];
       // no shadow on the water under a swimming monster, nor under a ghost
       entry.shadow.setVisible(!swimming && !fx.spectral);
@@ -436,6 +505,10 @@ export class GameScene extends Phaser.Scene {
         const alpha = fx.spectral ? this.fx.spectral(m, entry, p, time, dt, time < (entry.walkUntil || 0)) : 1;
         this.fx.applyCrossfade(entry, fx.crossfadeMs ?? 1, alpha);
       }
+      if (fx.glow && sheetKind) {
+        this.fx.glowLayer(entry, m, anim, sheetKind === 'sitdown' ? 'wakeup' : sheetKind, heavyKind, fx, time, dtReal, entry.actionProgress ?? 0);
+      }
+      if (fx.heavy && sheetKind) this.animationEvents(entry, anim, sheetKind, p, look.scale);
       const top = look.directional ? entry.sprite.displayHeight * directionalOriginY(anim) : entry.sprite.displayHeight;
       this.setBubble(entry, m.state === 'escaped' ? 'bubble-scared' : null, p, top - 10);
     }
@@ -495,7 +568,7 @@ export class GameScene extends Phaser.Scene {
       entry.sprite.play({ key, startFrame: sameKind ? entry.sprite.anims.currentFrame.index - 1 : 0 });
     }
     entry.sprite.anims.timeScale = this.world.speed || 0.0001;
-    entry.sprite.setOrigin(0.5, PERSON_ORIGIN_Y).setScale(PERSON_SCALE).setPosition(p.x, p.y + 2).setDepth(p.y);
+    entry.sprite.setOrigin(0.5, PERSON_ORIGIN_Y).setScale(PERSON_SCALE).setPosition(p.x, p.y + 2 + this.fx.tremorAt(p.x, p.y)).setDepth(p.y);
     if (!entry.shadow) entry.shadow = this.add.image(0, 0, 'shadow');
     entry.shadow.setPosition(p.x, p.y + 3).setDepth(p.y - 0.5).setScale(0.45, 0.45);
     return 46;

@@ -25,7 +25,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `npm run build` | Crée la version à publier dans le dossier `dist/` |
 | `npm run preview` | Ouvre la version publiable pour la vérifier |
 | `node scripts/balance-sim.js` | Simule 15 minutes de jeu pour régler l'équilibre |
-| `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre (`dragonnet`, `kraken`, `kraken_water`, `spectre`) ou des personnes (`people`) à partir des modèles 3D. Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
+| `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre (`dragonnet`, `kraken`, `kraken_water`, `spectre`, `golem`) ou des personnes (`people`) à partir des modèles 3D. Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
 | `node scripts/render-model/render-fence.mjs` | Refait les images des barrières des enclos (barreaux de fer, et vitres là où un enclos touche une allée), dessinées dans `scripts/render-model/fence.html` |
 | `node scripts/render-model/render-ground.mjs` | Refait les sols des enclos (lave, eau, crypte, forêt, neige) à partir de textures photo, téléchargées automatiquement |
 | `node scripts/render-model/render-decor.mjs` | Refait les images des décorations d'enclos (modèles Poly Haven téléchargés automatiquement, ou fabriqués dans `scripts/render-model/decor.html`) |
@@ -58,3 +58,14 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 - Sols des enclos : textures photo de [ambientCG](https://ambientcg.com) (Lava003, Tiles093, Ground037, Snow013 — licence CC0).
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - `docs/` : document de conception et plan de construction.
+
+## Modèles 3D : défauts connus
+
+- **Golem** (`models/golem.glb`) :
+  - *Walk* est animée à l'envers (le pied d'appui avance) : le jeu la joue à l'envers, ce qui donne une vraie marche
+    sans glissement (vitesse 0,45 case / s, mesurée sur la foulée).
+  - *GroundSlam* : les poings s'arrêtent à environ 0,4 unité au-dessus du sol (hauteur des genoux) ; les effets
+    d'impact sont placés au sol, sous les poings. À corriger dans le fichier 3D (accroupissement plus profond).
+  - *ChestBeat* : les poings ne touchent pas le torse (ils restent écartés, à 0,93 unité contre 0,96 au repos). À
+    corriger dans le fichier 3D.
+  - *Turn Left / Turn Right* ne sont pas utilisés : le jeu oriente le golem selon 8 directions pré-rendues.

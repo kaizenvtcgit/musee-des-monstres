@@ -1,4 +1,5 @@
 import { BALANCE } from '../config/balance.js';
+import { SPECIES } from '../config/species.js';
 import { findPath, findNearest } from './pathfinding.js';
 import { scare } from './visitors.js';
 
@@ -68,7 +69,8 @@ export function updateEscaped(monster, ctx, dt) {
       .filter((n) => ctx.grid.getTile(n.tx, n.ty).occupant === null);
     if (options.length) monster.wanderTarget = options[Math.floor(ctx.rng() * options.length)];
   }
-  if (monster.wanderTarget && step(monster, monster.wanderTarget, MONSTER_SPEED * dt)) {
+  const speed = MONSTER_SPEED * (SPECIES[monster.speciesId]?.speed ?? 1);
+  if (monster.wanderTarget && step(monster, monster.wanderTarget, speed * dt)) {
     monster.tile = { ...monster.wanderTarget };
     monster.wanderTarget = null;
     if (ctx.rng() < ESCAPED_PAUSE_CHANCE) monster.pause = ESCAPED_PAUSE_SEC;

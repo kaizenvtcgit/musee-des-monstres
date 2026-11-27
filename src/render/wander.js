@@ -6,8 +6,9 @@ export const WANDER_SPEED = 0.7; // tiles per second, matches the walk animation
 const PAUSE = [2, 5]; // seconds of rest after reaching a spot
 const BLOCKED_WAIT = [0.4, 1.0]; // seconds of hesitation when someone is in the way
 
-export function createWanderer(pos, r) {
-  return { x: pos.x, y: pos.y, r, goal: null, rest: 0, moving: false };
+// opts.speed (tiles / s) and opts.pause ([min, max] seconds of rest) for slower or calmer monsters.
+export function createWanderer(pos, r, opts = {}) {
+  return { x: pos.x, y: pos.y, r, goal: null, rest: 0, moving: false, speed: opts.speed ?? WANDER_SPEED, pause: opts.pause ?? PAUSE };
 }
 
 // How much room is left around p (negative = overlapping someone).
@@ -34,9 +35,11 @@ export function findFreeSpot(bounds, others, r, rng) {
   return best;
 }
 
+const restTime = (w, rng) => { const p = w.pause ?? PAUSE; return p[0] + rng() * (p[1] - p[0]); };
+
 export function stepWander(w, others, bounds, dt, rng) {
   w.moving = false;
-  const step = WANDER_SPEED * dt;
+  const step = (w.speed ?? WANDER_SPEED) * dt;
 
   // started on top of someone (just placed, or the enclosure shrank): back away first
   if (clearance(w, w.r, others) < 0) {
@@ -61,7 +64,7 @@ export function stepWander(w, others, bounds, dt, rng) {
     return;
   }
   if (!w.goal) {
-    w.rest = PAUSE[0] + rng() * (PAUSE[1] - PAUSE[0]);
+    w.rest = restTime(w, rng);
     return;
   }
 
@@ -80,6 +83,6 @@ export function stepWander(w, others, bounds, dt, rng) {
   w.moving = move > 0;
   if (d <= step) {
     w.goal = null;
-    w.rest = PAUSE[0] + rng() * (PAUSE[1] - PAUSE[0]);
+    w.rest = restTime(w, rng);
   }
 }

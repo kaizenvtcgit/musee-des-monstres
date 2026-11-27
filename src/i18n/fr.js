@@ -5,6 +5,8 @@ export const fr = {
   'hud.reputation': 'Réputation',
   'hud.ticket': 'Billet : {n}',
   'hud.speed.pause': 'Pause',
+  'sound.mute': 'Couper le son',
+  'sound.unmute': 'Remettre le son',
   'save.saved': 'Sauvegardé',
   'save.autosave': 'La partie est sauvegardée automatiquement dans ce navigateur',
   'save.resumed': 'Partie reprise là où tu l\'avais laissée',

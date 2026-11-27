@@ -116,3 +116,21 @@ describe('staff', () => {
     expect(ctx.stored).toContain(m);
   });
 });
+
+describe('species speed', () => {
+  it('an escaped golem wanders slower than other monsters (heavy, matches its walk)', async () => {
+    const { createMonster } = await import('../../src/sim/monsters.js');
+    const { updateEscaped } = await import('../../src/sim/staff.js');
+    const { Grid } = await import('../../src/sim/grid.js');
+    const grid = new Grid(20, 20);
+    const ctx = { grid, visitors: [], rng: () => 0.99 }; // 0.99: never pauses
+    const travelled = (speciesId) => {
+      const m = createMonster(speciesId);
+      Object.assign(m, { state: 'escaped', pos: { x: 10, y: 10 }, tile: { tx: 10, ty: 10 }, wanderTarget: { tx: 11, ty: 10 } });
+      updateEscaped(m, ctx, 0.2);
+      return Math.hypot(m.pos.x - 10, m.pos.y - 10);
+    };
+    expect(travelled('golem')).toBeCloseTo(0.2 * 0.45, 5);
+    expect(travelled('dragonnet')).toBeCloseTo(0.2, 5);
+  });
+});

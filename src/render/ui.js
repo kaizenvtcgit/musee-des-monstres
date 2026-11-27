@@ -212,6 +212,7 @@ class UI {
     if (!btn) return;
     if (btn.dataset.speed !== undefined) this.world.setSpeed(Number(btn.dataset.speed));
     if (btn.dataset.ticket) this.world.setTicketPrice(this.world.ticketPrice + Number(btn.dataset.ticket));
+    if (btn.dataset.mute !== undefined && this.scene?.sounds) this.scene.sounds.setMuted(!this.scene.sounds.muted);
     if (btn.dataset.newgame !== undefined) {
       // first click asks for confirmation, a second click within a few seconds starts over
       if (performance.now() < this.confirmNewGameUntil) {
@@ -244,7 +245,9 @@ class UI {
   renderSaveButtons() {
     const confirming = performance.now() < this.confirmNewGameUntil;
     const saved = performance.now() - (this.savedAt ?? -1e9) < SAVED_BADGE_MS;
+    const muted = this.scene?.sounds?.muted;
     return `<span class="saved ${saved ? 'show' : ''}" title="${esc(t('save.autosave'))}">✓ ${esc(t('save.saved'))}</span>
+      <button data-mute title="${esc(t(muted ? 'sound.unmute' : 'sound.mute'))}">${muted ? '🔇' : '🔊'}</button>
       <button data-newgame class="${confirming ? 'danger' : ''}" title="${esc(t('save.newGameHelp'))}">${esc(t(confirming ? 'save.confirmNewGame' : 'save.newGame'))}</button>`;
   }
 
