@@ -9,6 +9,8 @@ import {
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
+// Habitat grounds repeat every GROUND_BLOCK tiles.
+const GROUND_BLOCK = 4;
 // Display scale of the 3D people (128 px frames) and how long a happy visitor waves (game seconds).
 const PERSON_SCALE = 0.5;
 const WAVE_SECONDS = 2.1;
@@ -168,7 +170,11 @@ export class GameScene extends Phaser.Scene {
         let key = this.grassKey(tx, ty);
         if (t.ground === 'path') key = tx === this.world.entrance.tx && ty === this.world.entrance.ty ? 'tile-entrance' : 'tile-path';
         const enc = t.occupant && builder.enclosures.get(t.occupant);
-        if (enc) key = `tile-${enc.habitat}`;
+        if (enc) {
+          // habitat grounds come as 4 x 4 tiles that fit together (scripts/render-model/render-ground.mjs)
+          const part = `tile-${enc.habitat}-${tx % GROUND_BLOCK}-${ty % GROUND_BLOCK}`;
+          key = this.textures.exists(`img-${part}`) ? part : `tile-${enc.habitat}`;
+        }
         const img = this.tileImages[ty * grid.w + tx];
         const rk = realKey(this, key);
         // real tiles have soft anti-aliased edges: overlap them by a pixel so no seam shows
@@ -194,12 +200,16 @@ export class GameScene extends Phaser.Scene {
     const f = this.fences;
     for (const e of builder.enclosures.values()) {
       if (realFence) {
+        // [edge middle x, y, axis, outside tile x, y]: a side that touches a path becomes a viewing window
         const segs = [];
-        for (let i = e.x0; i <= e.x1; i++) segs.push([i, e.y0 - 0.5, 'X'], [i, e.y1 + 0.5, 'X']);
-        for (let j = e.y0; j <= e.y1; j++) segs.push([e.x0 - 0.5, j, 'Y'], [e.x1 + 0.5, j, 'Y']);
-        for (const [mx, my, axis] of segs) {
+        for (let i = e.x0; i <= e.x1; i++) segs.push([i, e.y0 - 0.5, 'X', i, e.y0 - 1], [i, e.y1 + 0.5, 'X', i, e.y1 + 1]);
+        for (let j = e.y0; j <= e.y1; j++) segs.push([e.x0 - 0.5, j, 'Y', e.x0 - 1, j], [e.x1 + 0.5, j, 'Y', e.x1 + 1, j]);
+        const hasWindow = this.textures.exists('img-prop-windowX') && this.textures.exists('img-prop-windowY');
+        for (const [mx, my, axis, ox, oy] of segs) {
           const c = tileToScreen(mx, my);
-          this.fenceSprites.push(this.add.image(c.x, c.y, `img-prop-fence${axis}`)
+          const outside = grid.inBounds(ox, oy) && grid.getTile(ox, oy);
+          const kind = hasWindow && outside && outside.ground === 'path' ? 'window' : 'fence';
+          this.fenceSprites.push(this.add.image(c.x, c.y, `img-prop-${kind}${axis}`)
             .setOrigin(0.5, FENCE_IMG.groundY / FENCE_IMG.h).setDisplaySize(FENCE_IMG.w / 2, FENCE_IMG.h / 2).setDepth(c.y));
         }
         continue;

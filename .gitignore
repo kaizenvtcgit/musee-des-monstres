@@ -4,3 +4,5 @@ dist
 
 # 3D people (Quaternius packs, ~60 MB): download them, see scripts/render-model/render.mjs
 models/people/
+# photo textures from ambientCG, downloaded by scripts/render-model/render-ground.mjs
+models/textures/

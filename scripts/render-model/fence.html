@@ -59,11 +59,16 @@ pillarTex.needsUpdate = true;
 const pillarMat = new THREE.MeshStandardMaterial({ map: pillarTex, roughness: 0.95 });
 const capMat = new THREE.MeshStandardMaterial({ color: 0x9a968d, roughness: 0.9 });
 const ironMat = new THREE.MeshStandardMaterial({ color: 0x33373d, metalness: 0.6, roughness: 0.45 });
+const glassMat = new THREE.MeshStandardMaterial({
+  color: 0xbfe3f2, transparent: true, opacity: 0.3, roughness: 0.05, metalness: 0.1, depthWrite: false,
+});
+const glareMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide });
+const frameMat = new THREE.MeshStandardMaterial({ color: 0x3b4148, metalness: 0.5, roughness: 0.5 });
 const rivetMat = new THREE.MeshStandardMaterial({ color: 0x8a6a2a, metalness: 0.7, roughness: 0.4 });
 
 // --- one segment along +X, from x = -0.5 to x = +0.5, centred on the tile edge ---
 const WALL_H = 0.28, WALL_D = 0.2, TOP = 1.15, PILLAR = 0.24;
-function buildSegment() {
+function buildSegment(kind) {
   const seg = new THREE.Group();
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); seg.add(m); return m; };
   // low stone wall
@@ -74,6 +79,18 @@ function buildSegment() {
     add(new THREE.BoxGeometry(PILLAR, TOP + 0.05, PILLAR), pillarMat, x, (TOP + 0.05) / 2, 0);
     add(new THREE.BoxGeometry(PILLAR + 0.07, 0.07, PILLAR + 0.07), capMat, x, TOP + 0.085, 0);
     add(new THREE.ConeGeometry(0.11, 0.12, 4), capMat, x, TOP + 0.18, 0).rotation.y = Math.PI / 4;
+  }
+  if (kind === 'window') {
+    // zoo viewing window: one big glass pane in a metal frame, with two light reflections
+    const span = 1 - PILLAR, bottom = WALL_H + 0.05, top = TOP - 0.02, h = top - bottom;
+    add(new THREE.BoxGeometry(span, h, 0.03), glassMat, 0, bottom + h / 2, 0);
+    for (const [x, w] of [[-0.12, 0.09], [0.02, 0.035]]) {
+      const g = add(new THREE.PlaneGeometry(w, h * 0.85), glareMat, x, bottom + h / 2, 0.02);
+      g.rotation.z = -0.35;
+    }
+    add(new THREE.BoxGeometry(span, 0.05, 0.07), frameMat, 0, top, 0);
+    add(new THREE.BoxGeometry(span, 0.04, 0.07), frameMat, 0, bottom, 0);
+    return seg;
   }
   // iron bars with spear tips
   const n = 6, span = 1 - PILLAR;
@@ -92,8 +109,8 @@ function buildSegment() {
   return seg;
 }
 const pivot = new THREE.Group();
-pivot.add(buildSegment());
 scene.add(pivot);
+const segments = { bars: buildSegment('bars'), window: buildSegment('window') };
 
 // Isometric camera: 30 deg down, 45 deg around, so a tile is a 2:1 diamond.
 const cam = new THREE.OrthographicCamera(
@@ -114,7 +131,9 @@ ctx.imageSmoothingQuality = 'high';
 
 // axis 'X': the segment runs along tile +x (screen down-right); 'Y': along tile +y (screen down-left).
 // The camera looks from +X+Z (world), so world +X shows down-right and world +Z down-left.
-window.renderFence = (axis) => {
+window.renderFence = (axis, kind = 'bars') => {
+  pivot.clear();
+  pivot.add(segments[kind]);
   pivot.rotation.y = axis === 'X' ? 0 : -Math.PI / 2;
   renderer.render(scene, cam);
   ctx.clearRect(0, 0, W, H);

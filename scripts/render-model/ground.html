@@ -1,0 +1,195 @@
+<!doctype html>
+<html>
+<body style="margin:0">
+<script type="importmap">
+  { "imports": { "three": "/three/build/three.module.js" } }
+</script>
+<script type="module">
+// Renders the ground of each enclosure habitat as a lit 3D surface (photo textures from ambientCG,
+// procedural water), in the game's isometric view, and cuts it into tiles (driven by render-ground.mjs).
+// A block of N x N tiles is rendered at once; the textures repeat exactly over the block, so the tiles
+// fit together seamlessly: the game picks tile (tx mod N, ty mod N).
+import * as THREE from 'three';
+
+const N = 4;                       // tiles per side of a block
+const TW = 128, TH = 64;           // one tile image (2x the in-game size)
+const SS = 2;                      // supersampling
+const PX_PER_UNIT = (TW / 2) / Math.SQRT1_2; // one tile = 1 world unit = TW px across (2:1 isometric)
+const W = N * TW, H = N * TH;      // the whole block
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setSize(W * SS, H * SS);
+renderer.setClearColor(0, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7a66, 1.5);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2dd, 2.2);
+sun.position.set(-4, 7, 2); // from the upper left, like the other renders
+scene.add(sun);
+
+// Isometric camera centred on the block (world X = tile x, world Z = tile y).
+const cam = new THREE.OrthographicCamera(
+  -(W / 2) / PX_PER_UNIT, (W / 2) / PX_PER_UNIT, (H / 2) / PX_PER_UNIT, -(H / 2) / PX_PER_UNIT, 0.01, 200,
+);
+const el = THREE.MathUtils.degToRad(30), az = THREE.MathUtils.degToRad(45);
+const target = new THREE.Vector3(N / 2, 0, N / 2);
+cam.position.set(Math.sin(az) * Math.cos(el) * 40, Math.sin(el) * 40, Math.cos(az) * Math.cos(el) * 40).add(target);
+cam.lookAt(target);
+
+// Sky for reflections (water, ice): vertical gradient.
+function skyTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 32;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 32);
+  grad.addColorStop(0, '#9ec9f0'); grad.addColorStop(0.5, '#e8f2fb'); grad.addColorStop(1, '#6d8f6a');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 32);
+  const t = new THREE.CanvasTexture(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envMap = pmrem.fromEquirectangular(skyTexture()).texture;
+
+const loader = new THREE.TextureLoader();
+const load = (url, repeat, color = false) => new Promise((ok, ko) => loader.load(url, (t) => {
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
+  t.anisotropy = 8;
+  if (color) t.colorSpace = THREE.SRGBColorSpace;
+  ok(t);
+}, undefined, ko));
+
+// Periodic noise in [0, 1] over a square canvas (sum of waves with integer frequencies), so it tiles.
+function periodicNoise(size, waves, seed) {
+  let s = seed;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const w = Array.from({ length: waves }, () => ({
+    fx: Math.floor(rnd() * 6) + 1, fy: Math.floor(rnd() * 6) - 3, ph: rnd() * 6.283, a: 0.4 + rnd(),
+  }));
+  const out = new Float32Array(size * size);
+  let min = Infinity, max = -Infinity;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let v = 0;
+      for (const k of w) v += k.a * Math.sin(6.283 * (k.fx * x + k.fy * y) / size + k.ph);
+      out[y * size + x] = v;
+      min = Math.min(min, v); max = Math.max(max, v);
+    }
+  }
+  for (let i = 0; i < out.length; i++) out[i] = (out[i] - min) / (max - min);
+  return out;
+}
+// Normal map from a periodic height field.
+function normalMapFrom(height, size, strength) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size);
+  const h = (x, y) => height[((y + size) % size) * size + ((x + size) % size)];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (h(x + 1, y) - h(x - 1, y)) * strength, dy = (h(x, y + 1) - h(x, y - 1)) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      img.data[i] = (-dx / len * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (dy / len * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+// Water: deep teal, small ripples (two periodic noise layers), sky reflections and sun glints.
+function waterMaterial() {
+  const size = 256;
+  const a = periodicNoise(size, 14, 11), b = periodicNoise(size, 22, 97);
+  const height = a.map((v, i) => v * 0.6 + b[i] * 0.4);
+  const normalMap = normalMapFrom(height, size, 6);
+  normalMap.repeat.set(N / 2, N / 2);
+  // colour: darker in the troughs, lighter on the crests
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size);
+  for (let i = 0; i < size * size; i++) {
+    const v = a[i];
+    img.data[i * 4] = 14 + v * 22; img.data[i * 4 + 1] = 62 + v * 34; img.data[i * 4 + 2] = 78 + v * 30; img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const map = new THREE.CanvasTexture(c);
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.repeat.set(N / 2, N / 2);
+  return new THREE.MeshStandardMaterial({
+    map, normalMap, normalScale: new THREE.Vector2(0.9, 0.9),
+    roughness: 0.08, metalness: 0.1, envMap, envMapIntensity: 1.1,
+  });
+}
+
+// A photo material from ambientCG: /tex/<id>/<id>_1K-JPG_<Map>.jpg; `repeat` = texture copies per block.
+async function photoMaterial({ id, repeat, tint, emissive, emissiveIntensity, roughness, normalScale = 1, envMapIntensity = 0.3 }) {
+  const base = `/tex/${id}/${id}_1K-JPG_`;
+  const opt = (name, color) => load(`${base}${name}.jpg`, repeat, color).catch(() => null);
+  const [map, normalMap, roughnessMap, aoMap, emissiveMap] = await Promise.all([
+    opt('Color', true), opt('NormalGL'), opt('Roughness'), opt('AmbientOcclusion'), emissive ? opt('Emission', true) : null,
+  ]);
+  return new THREE.MeshStandardMaterial({
+    map, normalMap, roughnessMap, aoMap, aoMapIntensity: 1,
+    normalScale: new THREE.Vector2(normalScale, normalScale),
+    color: new THREE.Color(tint ?? 0xffffff),
+    roughness: roughness ?? 1,
+    emissiveMap, emissive: emissive ? new THREE.Color(emissive) : new THREE.Color(0), emissiveIntensity: emissiveIntensity ?? 1,
+    envMap, envMapIntensity,
+  });
+}
+
+const geo = new THREE.PlaneGeometry(N, N);
+geo.rotateX(-Math.PI / 2);
+geo.translate(N / 2, 0, N / 2);
+geo.setAttribute('uv2', geo.attributes.uv);
+const ground = new THREE.Mesh(geo);
+scene.add(ground);
+
+const out = document.createElement('canvas');
+out.width = TW; out.height = TH;
+const octx = out.getContext('2d');
+
+// Renders the block for one habitat and returns the N x N tile images (data URLs, row by row: [ty][tx]).
+window.renderGround = async (opts) => {
+  ground.material = opts.water ? waterMaterial() : await photoMaterial(opts);
+  renderer.render(scene, cam);
+  const tiles = [];
+  for (let ty = 0; ty < N; ty++) {
+    const row = [];
+    for (let tx = 0; tx < N; tx++) {
+      // tile centre on screen, relative to the block centre (N/2, N/2)
+      const cx = W / 2 + ((tx + 0.5 - N / 2) - (ty + 0.5 - N / 2)) * (TW / 2);
+      const cy = H / 2 + ((tx + 0.5 - N / 2) + (ty + 0.5 - N / 2)) * (TH / 2);
+      octx.clearRect(0, 0, TW, TH);
+      octx.save();
+      // diamond mask, half a pixel bigger than the tile so neighbours overlap without seams
+      octx.beginPath();
+      octx.moveTo(TW / 2, -0.5); octx.lineTo(TW + 1, TH / 2); octx.lineTo(TW / 2, TH + 0.5); octx.lineTo(-1, TH / 2);
+      octx.closePath();
+      octx.clip();
+      octx.drawImage(renderer.domElement, (cx - TW / 2) * SS, (cy - TH / 2) * SS, TW * SS, TH * SS, 0, 0, TW, TH);
+      octx.restore();
+      row.push(out.toDataURL(opts.format ?? 'image/webp', 0.86));
+    }
+    tiles.push(row);
+  }
+  return tiles;
+};
+window.N = N;
+window.ready = true;
+</script>
+</body>
+</html>

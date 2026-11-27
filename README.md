@@ -26,7 +26,8 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `npm run preview` | Ouvre la version publiable pour la vérifier |
 | `node scripts/balance-sim.js` | Simule 15 minutes de jeu pour régler l'équilibre |
 | `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre (`dragonnet`) ou des personnes (`people`) à partir des modèles 3D. Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
-| `node scripts/render-model/render-fence.mjs` | Refait les images des barrières des enclos (muret de pierre et barreaux de fer, dessinés dans `scripts/render-model/fence.html`) |
+| `node scripts/render-model/render-fence.mjs` | Refait les images des barrières des enclos (barreaux de fer, et vitres là où un enclos touche une allée), dessinées dans `scripts/render-model/fence.html` |
+| `node scripts/render-model/render-ground.mjs` | Refait les sols des enclos (lave, eau, crypte, forêt, neige) à partir de textures photo, téléchargées automatiquement |
 
 ## Comment jouer
 
@@ -48,5 +49,6 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 
 ## Crédits
 
+- Sols des enclos : textures photo de [ambientCG](https://ambientcg.com) (Lava003, Tiles093, Ground037, Snow013 — licence CC0).
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - `docs/` : document de conception et plan de construction.

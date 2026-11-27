@@ -1,5 +1,5 @@
 // Renders the enclosure barrier (scripts/render-model/fence.html) into
-// src/assets/buildings/prop-fenceX.png and prop-fenceY.png.
+// src/assets/buildings/prop-fenceX/Y.png (barrier) and prop-windowX/Y.png (glass pane along paths).
 //
 // Usage: node scripts/render-model/render-fence.mjs
 // Needs the same setup as render.mjs (npm install, then Playwright with Chromium).
@@ -24,9 +24,12 @@ await page.route('http://render.local/**', (route) => {
 });
 await page.goto('http://render.local/fence.html');
 await page.waitForFunction(() => window.ready, null, { timeout: 60000 });
-for (const axis of ['X', 'Y']) {
-  const url = await page.evaluate((a) => window.renderFence(a), axis);
-  writeFileSync(path.join(ROOT, `src/assets/buildings/prop-fence${axis}.png`), Buffer.from(url.split(',')[1], 'base64'));
-  console.log(`prop-fence${axis}.png done`);
+// bars: the normal barrier; window: the glass pane used where an enclosure side touches a path
+for (const [kind, name] of [['bars', 'fence'], ['window', 'window']]) {
+  for (const axis of ['X', 'Y']) {
+    const url = await page.evaluate(([a, k]) => window.renderFence(a, k), [axis, kind]);
+    writeFileSync(path.join(ROOT, `src/assets/buildings/prop-${name}${axis}.png`), Buffer.from(url.split(',')[1], 'base64'));
+    console.log(`prop-${name}${axis}.png done`);
+  }
 }
 await browser.close();
