@@ -18,6 +18,8 @@ import path from 'node:path';
 // Playwright is not a project dependency: install it once with `npm install --no-save playwright`.
 const { chromium } = createRequire(import.meta.url)('playwright');
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// the yeti's mouth: a point fixed to its head bone (for its breath), see yetiEvents
+const MOUTH = 'Head@0,-0.01,0.22';
 
 // kind: role in the game -> animation of the model.
 // frames = duration of the clip x frames per second in ANIM_FPS (one sheet = exactly one loop).
@@ -266,8 +268,7 @@ async function renderStacked(name, m, opts) {
 // fists raised against the chest... Each event: { f: frame, type, at: [[dx, dy] per direction] } where (dx, dy)
 // is the spot on screen, in frame px from the ground point of the monster.
 // The yeti's moments: soft steps (snow when the ground is snowy), its breath in the cold, snores, a roar...
-// Same format as animEvents. The mouth is a point fixed to the head.
-const MOUTH = 'Head@0,-0.01,0.22';
+// Same format as animEvents. The mouth is a point fixed to the head (MOUTH, at the top of this file).
 async function yetiEvents(kind, a, opts) {
   const bones = ['Foot.L', 'Foot.R', 'Hand.L', 'Hand.R', 'Chest', MOUTH];
   const probe = [];
