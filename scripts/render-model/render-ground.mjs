@@ -17,28 +17,28 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const TEX = path.join(ROOT, 'models/textures');
 
 // repeat: copies of the texture over a block of tiles (bigger = smaller details); block: tiles per side
-// of the block (4 by default; 8 for the lawn and the paths, seen everywhere, so they repeat less);
+// of the block (4 by default; 8 everywhere now, so the grounds repeat less);
 // macro: big soft light / dark patches baked over the block (see ground.html).
 const HABITATS = {
   // the park itself: lawn and visitor paths
   grass: { id: 'Grass004', block: 8, repeat: 4, tint: 0xdcf0cc, normalScale: 1.2, macro: { amount: 0.2, warm: 0.14, seed: 7 } },
   path: { id: 'PavingStones070', block: 8, repeat: 8, tint: 0xe2dcd0, normalScale: 1.6, macro: { amount: 0.1, warm: 0.15, seed: 23 } },
-  lava: { id: 'Lava003', repeat: 1, emissive: 0xff5a10, emissiveIntensity: 1.8, normalScale: 1.6, tint: 0xb0a8a4 },
-  water: { water: true },
-  dark: { id: 'Tiles093', repeat: 2, tint: 0xb6aec4, normalScale: 1.6 },
-  forest: { id: 'Ground037', repeat: 2, tint: 0xc8dcb0, normalScale: 1.4 },
-  ice: { id: 'Snow013', repeat: 1, tint: 0xe4eefa, normalScale: 1.6, envMapIntensity: 0.5 },
+  lava: { block: 8, id: 'Lava003', repeat: 2, emissive: 0xff5a10, emissiveIntensity: 1.8, normalScale: 1.6, tint: 0xb0a8a4, macro: { amount: 0.14, warm: 0, seed: 18 } },
+  water: { block: 8, water: true },
+  dark: { block: 8, id: 'Tiles093', repeat: 4, tint: 0xb6aec4, normalScale: 1.6, macro: { amount: 0.14, warm: 0.1, seed: 25 } },
+  forest: { block: 8, id: 'Ground068', repeat: 4, tint: 0xd0d8c4, normalScale: 1.4, macro: { amount: 0.14, warm: 0.1, seed: 28 } },
+  ice: { block: 8, id: 'Snow013', repeat: 2, tint: 0xe4eefa, normalScale: 1.6, envMapIntensity: 0.5, macro: { amount: 0.07, warm: 0, seed: 45 } },
   // the second and third habitat of each monster
-  ash: { id: 'Ground110', repeat: 2, tint: 0x8c8884, normalScale: 1.5 },
-  basalt: { id: 'Ground111', repeat: 1, tint: 0xd8b48c, normalScale: 1.4 },
-  reef: { water: { deep: [22, 104, 112], light: [62, 150, 148], waves: 5 } },
-  abyss: { water: { deep: [4, 12, 28], light: [12, 30, 52], waves: 4, sky: 0.3 } },
-  swamp: { water: { deep: [34, 42, 26], light: [70, 78, 46], waves: 3, sky: 0.5 } },
-  graveyard: { id: 'Ground071', repeat: 2, tint: 0x9e9a8a, normalScale: 1.4 },
-  ruins: { id: 'PavingStones138', repeat: 2, tint: 0xc8c4b4, normalScale: 1.5 },
-  crystal: { id: 'Rock012', repeat: 2, tint: 0x9088a8, normalScale: 1.6 },
-  tundra: { id: 'Snow015', repeat: 2, normalScale: 1.4 },
-  summit: { id: 'Snow008A', repeat: 1, tint: 0xd9e2ee, normalScale: 2.4, envMapIntensity: 0.3 },
+  ash: { block: 8, id: 'Ground110', repeat: 4, tint: 0x8c8884, normalScale: 1.5, macro: { amount: 0.14, warm: 0.1, seed: 25 } },
+  basalt: { block: 8, id: 'Ground111', repeat: 2, tint: 0xd8b48c, normalScale: 1.4, macro: { amount: 0.14, warm: 0.1, seed: 28 } },
+  reef: { block: 8, water: { deep: [22, 104, 112], light: [62, 150, 148], waves: 5 } },
+  abyss: { block: 8, water: { deep: [4, 12, 28], light: [12, 30, 52], waves: 4, sky: 0.3 } },
+  swamp: { block: 8, water: { deep: [34, 42, 26], light: [70, 78, 46], waves: 3, sky: 0.5 } },
+  graveyard: { block: 8, id: 'Ground071', repeat: 4, tint: 0x9e9a8a, normalScale: 1.4, macro: { amount: 0.14, warm: 0.1, seed: 31 } },
+  ruins: { block: 8, id: 'PavingStones138', repeat: 4, tint: 0xc8c4b4, normalScale: 1.5, macro: { amount: 0.14, warm: 0.1, seed: 33 } },
+  crystal: { block: 8, id: 'Rock012', repeat: 4, tint: 0x9088a8, normalScale: 1.6, macro: { amount: 0.14, warm: 0, seed: 27 } },
+  tundra: { block: 8, id: 'Snow015', repeat: 4, normalScale: 1.4, macro: { amount: 0.07, warm: 0, seed: 10 } },
+  summit: { block: 8, id: 'Snow008A', repeat: 2, tint: 0xd9e2ee, normalScale: 2.4, envMapIntensity: 0.3, macro: { amount: 0.07, warm: 0, seed: 49 } },
 };
 
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(HABITATS);

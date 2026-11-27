@@ -57,7 +57,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 ## Crédits
 
 - Décorations d'enclos : modèles 3D de [Poly Haven](https://polyhaven.com) (licence CC0).
-- Sols des enclos : textures photo de [ambientCG](https://ambientcg.com) (Lava003, Tiles093, Ground037, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A — licence CC0).
+- Sols : textures photo de [ambientCG](https://ambientcg.com) (licence CC0) — pelouse Grass004, allées PavingStones070, enclos Lava003, Tiles093, Ground068, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A.
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - `docs/` : document de conception et plan de construction.
 
