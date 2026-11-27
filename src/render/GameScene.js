@@ -7,6 +7,8 @@ import {
   visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y, monsterFx, MONSTER_EVENTS,
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
+import { straightLine } from './pathline.js';
+import { t as tr } from '../i18n/index.js';
 import { MonsterFX } from './monsterfx.js';
 import { BALANCE } from '../config/balance.js';
 import { Sounds } from './sound.js';
@@ -713,8 +715,8 @@ export class GameScene extends Phaser.Scene {
       const tile = this.pointerTile(pointer);
       if (this.tool.type === 'enclosure') this.dragStart = tile;
       if (this.tool.type === 'path') {
-        this.lastPainted = null;
-        this.paintPath(tile);
+        this.pathStart = tile;
+        this.drawGhost(tile);
       }
     });
 
@@ -731,7 +733,7 @@ export class GameScene extends Phaser.Scene {
         return;
       }
       const tile = this.pointerTile(pointer);
-      if (this.tool.type === 'path' && pointer.leftButtonDown()) this.paintPath(tile);
+      if (this.tool.type === 'path' && !pointer.leftButtonDown()) this.pathStart = null;
       this.drawGhost(tile);
     });
 
@@ -756,32 +758,29 @@ export class GameScene extends Phaser.Scene {
     return result;
   }
 
-  // Paints every tile between the last painted tile and this one (4-connected),
-  // so fast mouse moves leave no holes.
-  paintPath(tile) {
-    const last = this.lastPainted;
-    this.lastPainted = { ...tile };
-    const cells = [];
-    if (last) {
-      let { tx, ty } = last;
-      while (tx !== tile.tx || ty !== tile.ty) {
-        if (Math.abs(tile.tx - tx) >= Math.abs(tile.ty - ty)) tx += Math.sign(tile.tx - tx);
-        else ty += Math.sign(tile.ty - ty);
-        cells.push({ tx, ty });
-      }
-    } else cells.push(tile);
-    for (const c of cells) {
+  // Lays the straight path previewed while dragging (src/render/pathline.js), on release.
+  // Tiles that are already paths are skipped; only the first refusal is reported.
+  placePathLine(start, end) {
+    let reported = false;
+    for (const c of straightLine(start, end)) {
       if (this.world.grid.isPath(c.tx, c.ty)) continue;
       const r = this.world.builder.placePath(c.tx, c.ty);
-      if (!r.ok && r.reason !== 'outOfBounds') this.report(r);
+      if (!r.ok && !reported && r.reason !== 'outOfBounds') {
+        this.report(r);
+        reported = true;
+      }
     }
   }
 
   handleClick(tile, pointer) {
     const { world } = this;
     const b = world.builder;
-    this.lastPainted = null;
     switch (this.tool.type) {
+      case 'path':
+        if (this.pathStart) this.placePathLine(this.pathStart, tile);
+        this.pathStart = null;
+        this.ui.hint(null);
+        break;
       case 'enclosure': {
         if (this.dragStart) this.report(b.placeEnclosure(this.dragStart.tx, this.dragStart.ty, tile.tx, tile.ty, this.tool.habitat));
         this.dragStart = null;
@@ -891,6 +890,17 @@ export class GameScene extends Phaser.Scene {
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!grid.isFree(x, y)) ok = false;
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (grid.inBounds(x, y)) diamondAt(x, y, ok);
       this.ui.hint(`${(x1 - x0 + 1)} × ${(y1 - y0 + 1)}`);
+      return;
+    }
+    if (type === 'path' && this.pathStart) {
+      // preview of the straight path being dragged, with its price
+      let n = 0;
+      for (const c of straightLine(this.pathStart, tile)) {
+        if (!grid.inBounds(c.tx, c.ty) || grid.isPath(c.tx, c.ty)) continue;
+        diamondAt(c.tx, c.ty, grid.isFree(c.tx, c.ty));
+        if (grid.isFree(c.tx, c.ty)) n++;
+      }
+      this.ui.hint(tr('hint.path', { n, cost: n * BALANCE.pathCost }));
       return;
     }
     if (!grid.inBounds(tile.tx, tile.ty)) return;

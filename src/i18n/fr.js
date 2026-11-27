@@ -15,6 +15,7 @@ export const fr = {
   'save.newGameHelp': 'Efface la sauvegarde et recommence un musée vide',
   'hud.help': 'Clic droit (ou glisser) pour déplacer la vue · molette pour zoomer · Échap pour annuler',
   'tool.select': 'Sélection',
+  'hint.path': 'Allée droite : {n} cases · {cost} pièces (relâche pour poser)',
   'event.keeperHired': 'Gardien embauché ({n} pièces / min)',
   'monster.inHatchery': 'Dans la couveuse, en attente d\'un enclos',
   'monster.catch': 'Attraper',
