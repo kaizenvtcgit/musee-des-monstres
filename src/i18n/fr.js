@@ -12,6 +12,8 @@ export const fr = {
   'visit.help': 'Z Q S D ou flèches : marcher · Maj : courir · souris : regarder (clic pour la capturer) · Échap : quitter',
   'visit.exit': 'Quitter la visite',
   'visit.loading': 'Arrivée des monstres et des visiteurs…',
+  'visit.error': 'La visite 3D n’a pas pu démarrer',
+  'visit.modelsFailed': '{n} modèle(s) 3D n’ont pas pu être chargés',
   'sound.unmute': 'Remettre le son',
   'save.saved': 'Sauvegardé',
   'save.autosave': 'La partie est sauvegardée automatiquement dans ce navigateur',

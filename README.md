@@ -63,12 +63,13 @@ les visiteurs et les gardiens se déplacent là où le jeu 2D les place. Le jeu 
 
 - Z Q S D (ou W A S D) ou flèches : marcher · Maj : courir · souris : regarder (clic pour capturer la souris)
   · Échap : quitter. Sur écran tactile : pouce gauche pour marcher, pouce droit pour regarder.
-- Ce code et ses fichiers (≈ 8 Mo) ne sont téléchargés qu'au lancement de la visite.
-- `src/assets/3d/*.gltf.json` : copies allégées des monstres (`models/*.glb`) et de 7 personnages Quaternius
-  (textures 1024 px en WebP, maillages simplifiés et compressés « meshopt », animations utiles seulement),
-  converties en glTF JSON autonome par `scripts/3d/glb-to-json.mjs` (certains hébergeurs ne servent pas les .glb).
+- Ce code et ses fichiers (≈ 15 Mo) ne sont téléchargés qu'au lancement de la visite.
+- `src/assets/3d/*.glb.json` : copies allégées des monstres (`models/*.glb`) et de 5 personnages Quaternius
+  (textures 1024 px en WebP, maillages simplifiés et quantifiés, animations utiles seulement),
+  emballées dans du JSON par `scripts/3d/glb-to-json.mjs` (certains hébergeurs ne servent pas les .glb) ; pas de
+  compression « meshopt » ni Draco : elles demandent du WebAssembly, que certaines pages intégrées interdisent.
   Pour les refaire : `npx @gltf-transform/cli optimize models/<m>.glb out.glb --texture-compress webp
-  --texture-size 1024 --compress meshopt --simplify-ratio 0.5 --simplify-error 0.002`, puis le script ci-dessus.
+  --texture-size 1024 --compress quantize --simplify-ratio 0.5 --simplify-error 0.002`, puis le script ci-dessus.
 - `src/assets/3d/tex/` : textures de sol et de mur (ambientCG, CC0) en 512 px.
 
 ## Crédits

@@ -10,14 +10,13 @@
 // This module and everything it loads are only downloaded when the visit starts.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { tilesOf, containsTile } from '../sim/enclosure.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { t } from '../i18n/index.js';
 
-// models: glTF with the binary data inside (scripts/3d/glb-to-json.mjs), as .json so any host serves them
+// models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
 const ASSETS = import.meta.glob('../assets/3d/**/*.{json,webp}', { eager: true, query: '?url', import: 'default' });
 const asset = (name) => ASSETS[`../assets/3d/${name}`];
 
@@ -36,7 +35,7 @@ const MONSTERS = {
   spectre: { height: 2.5, walk: 'Float', idle: 'Idle', hover: 0.35 },
   yeti: { height: 3.0, walk: 'Walk', idle: 'Idle' },
 };
-const VISITOR_MODELS = ['person-men-casual_2', 'person-women-casual', 'person-men-suit', 'person-women-formal', 'person-men-beach', 'person-women-adventurer'];
+const VISITOR_MODELS = ['person-men-casual_2', 'person-women-casual', 'person-men-suit', 'person-women-formal'];
 const KEEPER_MODEL = 'person-men-worker';
 
 // Ground textures: file, metres covered by one copy of the texture, tint.
@@ -68,8 +67,9 @@ export async function startVisit(scene) {
   try {
     await running.start();
   } catch (err) {
+    // keep the page open with the reason, so the player sees what went wrong (and can leave)
     console.error(err);
-    running?.stop();
+    running?.status(`${t('visit.error')} (${err?.message ?? err})`);
   }
 }
 
@@ -108,7 +108,7 @@ class Visit {
     this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 400);
     this.s3.fog = new THREE.Fog(0xcfe0ea, 60, 210);
 
-    this.loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+    this.loader = new GLTFLoader();
     this.buildSky();
     this.buildLights();
     this.buildGround();
@@ -128,8 +128,11 @@ class Visit {
     window.addEventListener('resize', this.onResize);
     this.renderer.setAnimationLoop(() => this.frame());
     // the models come in the background; the walk can start at once
-    await Promise.all([...Object.keys(MONSTERS).map((s) => this.model(s)), ...VISITOR_MODELS.map((m) => this.model(m)), this.model(KEEPER_MODEL)]);
-    this.status(null);
+    const names = [...Object.keys(MONSTERS), ...VISITOR_MODELS, KEEPER_MODEL];
+    const results = await Promise.allSettled(names.map((n) => this.model(n)));
+    const failed = results.filter((r) => r.status === 'rejected');
+    for (const r of failed) console.error(r.reason);
+    this.status(failed.length ? t('visit.modelsFailed', { n: failed.length }) : null);
   }
 
   buildDom() {
@@ -168,7 +171,8 @@ class Visit {
   }
 
   status(text) {
-    const el = this.root.querySelector('.visit-status');
+    const el = this.root?.querySelector('.visit-status');
+    if (!el) return;
     el.style.display = text ? 'block' : 'none';
     el.textContent = text ?? '';
   }
@@ -549,19 +553,31 @@ class Visit {
 
   // ---------------------------------------------------------------- models
 
+  // A model, loaded once: fetched as JSON, its .glb bytes decoded here and parsed by three.js.
   model(name) {
     if (!this.models.has(name)) {
-      this.models.set(name, new Promise((ok, ko) => this.loader.load(asset(`${name}.gltf.json`), (g) => {
-        g.scene.traverse((o) => {
-          if (o.isMesh) {
-            o.castShadow = true;
-            o.receiveShadow = true;
-            o.frustumCulled = false; // skinned: its bounds do not follow the animation
-          }
+      const p = fetch(asset(`${name}.glb.json`))
+        .then((r) => {
+          if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+          return r.json();
+        })
+        .then(({ glb }) => {
+          const bin = atob(glb), bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          return this.loader.parseAsync(bytes.buffer, '');
+        })
+        .then((g) => {
+          g.scene.traverse((o) => {
+            if (o.isMesh) {
+              o.castShadow = true;
+              o.receiveShadow = true;
+              o.frustumCulled = false; // skinned: its bounds do not follow the animation
+            }
+          });
+          const box = new THREE.Box3().setFromObject(g.scene);
+          return { scene: g.scene, animations: g.animations, box };
         });
-        const box = new THREE.Box3().setFromObject(g.scene);
-        ok({ scene: g.scene, animations: g.animations, box });
-      }, undefined, ko)));
+      this.models.set(name, p);
     }
     return this.models.get(name);
   }
@@ -604,7 +620,7 @@ class Visit {
           Object.assign(e, body, { loading: false });
           e.obj.position.set(it.x * T, 0, it.y * T);
           this.s3.add(e.obj);
-        });
+        }).catch(() => { e.failed = true; }); // this model could not be loaded: nobody drawn
         continue;
       }
       if (e.loading) continue;
