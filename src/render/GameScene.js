@@ -590,7 +590,9 @@ export class GameScene extends Phaser.Scene {
       }
       entry.lastX = p.x;
       const bob = animated ? 0 : Math.abs(Math.sin(time * 0.006 + entry.phase)) * (look.real ? 1.2 : 3);
-      entry.sprite.setPosition(p.x, p.y + (look.directional ? 0 : 8) - bob + this.fx.tremorAt(p.x, p.y)).setDepth(p.y);
+      // the ground trembles under the others, not under the heavy monster that shakes it (it would look blurred)
+      const tremor = fx.heavy ? 0 : this.fx.tremorAt(p.x, p.y);
+      entry.sprite.setPosition(p.x, p.y + (look.directional ? 0 : 8) - bob + tremor).setDepth(p.y);
       const pulse = m.state === 'escaped' ? 1 + 0.08 * Math.sin(time * 0.02) : 1;
       entry.sprite.setScale(look.scale * pulse);
       let shadow = [0.7, 0.7];
