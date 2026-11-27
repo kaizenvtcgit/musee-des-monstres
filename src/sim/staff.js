@@ -1,3 +1,4 @@
+import { centerOf } from './enclosure.js';
 import { BALANCE } from '../config/balance.js';
 import { SPECIES } from '../config/species.js';
 import { findPath, findNearest } from './pathfinding.js';
@@ -31,7 +32,7 @@ export function hireKeeper(keepers, wallet, spawnTile) {
 }
 
 export function enclosureCenter(e) {
-  return { x: (e.x0 + e.x1) / 2, y: (e.y0 + e.y1) / 2 };
+  return centerOf(e);
 }
 
 // Nearest free tile outside the enclosure, searching rings around it.

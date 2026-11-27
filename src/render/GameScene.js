@@ -12,6 +12,7 @@ import { BALANCE } from '../config/balance.js';
 import { Sounds } from './sound.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
 import { HABITAT_FAMILY, habitatFits } from '../config/species.js';
+import { rectsOf, tilesOf, containsTile } from '../sim/enclosure.js';
 
 const DECOR_IDS = Object.keys(ENCLOSURE_DECOR); // order of the cells of the decoration atlas
 
@@ -40,6 +41,7 @@ const MONSTER_RADIUS = { dragonnet: 0.6, kraken: 0.6, spectre: 0.4, golem: 0.45,
 import { capacity } from '../sim/breeding.js';
 
 const GROUND_DEPTH = -1e6;
+const GROUND_ANIM_FPS = 7; // frames per second of the animated grounds
 // Small 3D details scattered on the enclosure grounds, per habitat (none on lava, water, snow).
 const ENCLOSURE_GROUND_DETAIL = {
   forest: { kinds: ['img-grass-tuft', 'img-grass-tuft', 'img-grass-tuftDry', 'img-grass-pebbles'], chance: 0.4 },
@@ -175,13 +177,11 @@ export class GameScene extends Phaser.Scene {
       c.refresh();
     }
     for (const e of this.world.builder.enclosures.values()) {
-      for (let ty = e.y0; ty <= e.y1; ty++) {
-        for (let tx = e.x0; tx <= e.x1; tx++) {
-          const p = tileToScreen(tx, ty);
-          const on = { n: ty === e.y0, s: ty === e.y1, w: tx === e.x0, e: tx === e.x1 };
-          for (const side of Object.keys(on)) {
-            if (on[side]) this.wallShade.push(this.add.image(p.x, p.y, `wall-shade-${side}`).setDisplaySize(64, 32).setDepth(GROUND_DEPTH + 1));
-          }
+      for (const { tx, ty } of tilesOf(e)) {
+        const p = tileToScreen(tx, ty);
+        const on = { n: !containsTile(e, tx, ty - 1), s: !containsTile(e, tx, ty + 1), w: !containsTile(e, tx - 1, ty), e: !containsTile(e, tx + 1, ty) };
+        for (const side of Object.keys(on)) {
+          if (on[side]) this.wallShade.push(this.add.image(p.x, p.y, `wall-shade-${side}`).setDisplaySize(64, 32).setDepth(GROUND_DEPTH + 1));
         }
       }
     }
@@ -190,11 +190,34 @@ export class GameScene extends Phaser.Scene {
   // A tile of a photo-realistic ground sheet (scripts/render-model/render-ground.mjs): the sheet holds a
   // block of n x n tiles that fit together (row = y), the map picks tile (tx mod n, ty mod n).
   // null when the sheet is not there (then the older single tiles are used).
+  // An animated ground ("-anim" atlas: frame f is a block at column f % 4, row f / 4) comes with `anim`,
+  // for animateGround.
   groundTile(name, tx, ty) {
+    const animKey = `img-tile-${name}-anim`;
+    if (this.textures.exists(animKey)) {
+      const src = this.textures.get(animKey).getSourceImage();
+      const n = src.width / 4 / 128, frames = 4 * Math.round(src.height / 64 / n);
+      const anim = { n, frames, bx: tx % n, by: ty % n };
+      return { key: animKey, frame: GameScene.animFrame(anim, this.groundFrame ?? 0), anim };
+    }
     const key = `img-tile-${name}-sheet`;
     if (!this.textures.exists(key)) return null;
     const n = Math.round(Math.sqrt(this.textures.get(key).frameTotal - 1)); // frameTotal counts __BASE
     return { key, frame: (ty % n) * n + (tx % n) };
+  }
+
+  static animFrame({ n, frames, bx, by }, f) {
+    f %= frames;
+    return (Math.floor(f / 4) * n + by) * 4 * n + (f % 4) * n + bx;
+  }
+
+  // Moves the animated grounds (flowing lava, moving water) to the frame of this moment.
+  animateGround(time) {
+    if (!this.animTiles?.length) return;
+    const f = Math.floor(time / (1000 / GROUND_ANIM_FPS));
+    if (f === this.groundFrame) return;
+    this.groundFrame = f;
+    for (const { img, anim } of this.animTiles) img.setFrame(GameScene.animFrame(anim, f));
   }
 
   grassKey(tx, ty) {
@@ -237,6 +260,7 @@ export class GameScene extends Phaser.Scene {
       this.lastGridVersion = this.world.grid.version;
       this.redrawGround();
     }
+    this.animateGround(time);
     this.syncEntities(time, Math.min(delta / 1000, 0.1) * this.world.speed);
     this.moveCameraWithKeys(delta);
     this.ui.update();
@@ -244,6 +268,7 @@ export class GameScene extends Phaser.Scene {
 
   redrawGround() {
     const { grid, builder } = this.world;
+    this.animTiles = [];
     for (let ty = 0; ty < grid.h; ty++) {
       for (let tx = 0; tx < grid.w; tx++) {
         const t = grid.getTile(tx, ty);
@@ -262,6 +287,7 @@ export class GameScene extends Phaser.Scene {
         const sheet = name && this.groundTile(name, tx, ty);
         let frame;
         if (sheet) ({ key, frame } = sheet);
+        if (sheet?.anim) this.animTiles.push({ img: this.tileImages[ty * grid.w + tx], anim: sheet.anim });
         const img = this.tileImages[ty * grid.w + tx];
         const rk = realKey(this, key);
         // real tiles have soft anti-aliased edges: overlap them by a pixel so no seam shows
@@ -299,9 +325,15 @@ export class GameScene extends Phaser.Scene {
     for (const e of builder.enclosures.values()) {
       if (realFence) {
         // [edge middle x, y, axis, outside tile x, y]: a side that touches a path becomes a viewing window
+        // one segment on every tile side that is not shared with another tile of the same enclosure
+        // (two enclosures of the same habitat side by side are merged: no fence between them)
         const segs = [];
-        for (let i = e.x0; i <= e.x1; i++) segs.push([i, e.y0 - 0.5, 'X', i, e.y0 - 1], [i, e.y1 + 0.5, 'X', i, e.y1 + 1]);
-        for (let j = e.y0; j <= e.y1; j++) segs.push([e.x0 - 0.5, j, 'Y', e.x0 - 1, j], [e.x1 + 0.5, j, 'Y', e.x1 + 1, j]);
+        for (const { tx, ty } of tilesOf(e)) {
+          if (!containsTile(e, tx, ty - 1)) segs.push([tx, ty - 0.5, 'X', tx, ty - 1]);
+          if (!containsTile(e, tx, ty + 1)) segs.push([tx, ty + 0.5, 'X', tx, ty + 1]);
+          if (!containsTile(e, tx - 1, ty)) segs.push([tx - 0.5, ty, 'Y', tx - 1, ty]);
+          if (!containsTile(e, tx + 1, ty)) segs.push([tx + 0.5, ty, 'Y', tx + 1, ty]);
+        }
         const hasWindow = this.textures.exists('img-prop-windowX') && this.textures.exists('img-prop-windowY');
         for (const [mx, my, axis, ox, oy] of segs) {
           const c = tileToScreen(mx, my);
@@ -407,7 +439,9 @@ export class GameScene extends Phaser.Scene {
   // rest, repeat, never through another monster of the same enclosure. Returns the drawn position.
   wanderInEnclosure(m, entry, e, dt) {
     const r = MONSTER_RADIUS[m.speciesId] ?? 0.5;
+    // the bounding box, and for an L-shaped (merged) enclosure, which points are really inside
     const bounds = { minX: e.x0 - 0.1, maxX: e.x1 + 0.1, minY: e.y0 - 0.1, maxY: e.y1 + 0.1 };
+    if (rectsOf(e).length > 1) bounds.inside = (x, y) => containsTile(e, Math.round(x), Math.round(y));
     const others = [];
     for (const id of e.monsterIds) {
       if (id === m.id) continue;
@@ -418,6 +452,8 @@ export class GameScene extends Phaser.Scene {
     for (const d of e.decor ?? []) if (!ENCLOSURE_DECOR[d.type]?.low) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     const sh = e.shelter;
     if (sh) others.push({ x: sh.tx + 0.5, y: sh.ty + 0.5, r: SHELTER_RADIUS });
+    // its enclosure was just merged into this one: it keeps walking from where it is
+    if (entry.w && entry.wEnc !== e.id && !this.world.builder.enclosures.has(entry.wEnc)) entry.wEnc = e.id;
     if (!entry.w || entry.wEnc !== e.id) {
       entry.wEnc = e.id;
       const fx = monsterFx(m.speciesId);
@@ -976,7 +1012,7 @@ export class GameScene extends Phaser.Scene {
       const t = grid.getTile(tile.tx, tile.ty);
       const enc = t.occupant && this.world.builder.enclosures.get(t.occupant);
       const ok = !!enc && HABITAT_FAMILY[enc.habitat] === this.tool.family && !enc.shelter
-        && enc.area >= BALANCE.shelterMinArea && tile.tx + 1 <= enc.x1 && tile.ty + 1 <= enc.y1;
+        && enc.area >= BALANCE.shelterMinArea && [[1, 0], [0, 1], [1, 1]].every(([dx, dy]) => containsTile(enc, tile.tx + dx, tile.ty + dy));
       for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
         if (grid.inBounds(tile.tx + dx, tile.ty + dy)) diamondAt(tile.tx + dx, tile.ty + dy, ok);
       }

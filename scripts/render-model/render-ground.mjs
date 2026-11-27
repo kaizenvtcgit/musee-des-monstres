@@ -19,13 +19,14 @@ const TEX = path.join(ROOT, 'models/textures');
 // repeat: copies of the texture over a block of tiles (bigger = smaller details); block: tiles per side
 // of the block (4 by default; 8 everywhere now, so the grounds repeat less);
 // macro: big soft light / dark patches baked over the block; relief: height of the real bumps
-// (from the texture's height map, in tiles), which cast shadows (see ground.html).
+// (from the texture's height map, in tiles), which cast shadows; anim: also a looping animation
+// tile-<h>-anim.webp (flowing lava, moving water; see renderGroundAnim in ground.html).
 const HABITATS = {
   // the park itself: lawn and visitor paths
   grass: { id: 'Grass004', block: 8, repeat: 4, tint: 0xdcf0cc, normalScale: 1.2, macro: { amount: 0.2, warm: 0.14, seed: 7 } },
   path: { id: 'PavingStones070', block: 8, repeat: 8, tint: 0xe2dcd0, normalScale: 1.6, macro: { amount: 0.1, warm: 0.15, seed: 23 } },
-  lava: { block: 8, relief: 0.12, id: 'Lava003', repeat: 2, emissive: 0xff5a10, emissiveIntensity: 1.8, normalScale: 1.6, tint: 0xb0a8a4, macro: { amount: 0.14, warm: 0, seed: 18 } },
-  water: { block: 8, water: true },
+  lava: { block: 8, relief: 0.12, id: 'Lava003', repeat: 2, emissive: 0xff5a10, emissiveIntensity: 1.8, normalScale: 1.6, tint: 0xb0a8a4, macro: { amount: 0.14, warm: 0, seed: 18 }, anim: { frames: 16, flow: [0.35, 0.2], pulse: 0.18 } },
+  water: { block: 8, water: true, anim: { frames: 16 } },
   dark: { block: 8, relief: 0.06, id: 'Tiles093', repeat: 4, tint: 0xb6aec4, normalScale: 1.6, macro: { amount: 0.14, warm: 0.1, seed: 25 } },
   forest: { block: 8, relief: 0.2, id: 'Ground068', repeat: 4, tint: 0xd0d8c4, normalScale: 1.4, macro: { amount: 0.14, warm: 0.1, seed: 28 } },
   ice: { block: 8, relief: 0.08, id: 'Snow013', repeat: 2, tint: 0xe4eefa, normalScale: 1.6, envMapIntensity: 0.5, macro: { amount: 0.07, warm: 0, seed: 45 } },
@@ -77,6 +78,7 @@ await page.waitForFunction(() => window.ready, null, { timeout: 60000 });
 const save = (file, dataUrl) => writeFileSync(path.join(ROOT, 'src/assets/tiles', file), Buffer.from(dataUrl.split(',')[1], 'base64'));
 for (const h of wanted) {
   save(`tile-${h}-sheet.webp`, await page.evaluate((o) => window.renderGround({ ...o, sheet: true }), HABITATS[h]));
+  if (HABITATS[h].anim) save(`tile-${h}-anim.webp`, await page.evaluate((o) => window.renderGroundAnim(o), HABITATS[h]));
   const [[still]] = await page.evaluate((o) => window.renderGround({ ...o, format: 'image/png' }), HABITATS[h]);
   save(`tile-${h}.png`, still);
   console.log(`${h} done`);

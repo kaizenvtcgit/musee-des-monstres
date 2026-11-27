@@ -1,6 +1,7 @@
 import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
 import { HABITAT_FAMILY } from '../config/species.js';
+import { rectsOf, containsTile, tilesOf, fitBox } from './enclosure.js';
 
 const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
@@ -26,6 +27,8 @@ export class Builder {
     this.isBlocked = () => false;
     // "tx,ty" of path tiles that cannot be demolished (the entrance).
     this.protectedTiles = new Set();
+    // Set by World: called when enclosure `fromId` was merged into `toId` (its monsters move over).
+    this.onEnclosuresMerged = () => {};
   }
 
   placePath(tx, ty) {
@@ -46,11 +49,53 @@ export class Builder {
     const price = area * BALANCE.enclosureCostPerTile;
     if (!this.wallet.spend(price)) return fail('noMoney');
     const id = `enc${this.nextId++}`;
-    this.enclosures.set(id, {
-      id, x0, y0, x1, y1, habitat, area, price, monsterIds: [], speciesId: null, breedTimer: 0, decor: [],
-    });
+    const e = {
+      id, x0, y0, x1, y1, rects: [{ x0, y0, x1, y1 }], habitat, area, price, monsterIds: [], speciesId: null, breedTimer: 0, decor: [],
+    };
+    this.enclosures.set(id, e);
     this.#fillRect(x0, y0, x1, y1, id);
-    return { ok: true, id };
+    // enclosures of the same habitat sharing a side with it become one enclosure (the oldest keeps its id)
+    const touching = this.#sameHabitatNeighbours(e);
+    if (!touching.length) return { ok: true, id };
+    const [into, ...rest] = touching.sort((a, b) => Number(a.id.slice(3)) - Number(b.id.slice(3)));
+    for (const other of [...rest, e]) this.#merge(other, into);
+    return { ok: true, id: into.id, merged: true };
+  }
+
+  // Enclosures of e's habitat (and compatible species) that share at least one tile side with e.
+  #sameHabitatNeighbours(e) {
+    const found = new Map();
+    for (const { tx, ty } of tilesOf(e)) {
+      for (const n of this.grid.neighbors4(tx, ty)) {
+        const id = this.grid.getTile(n.tx, n.ty).occupant;
+        const o = id && id !== e.id && this.enclosures.get(id);
+        if (!o || o.habitat !== e.habitat) continue;
+        found.set(id, o);
+      }
+    }
+    // never two species in one enclosure
+    const species = new Set([...found.values()].map((o) => o.speciesId).filter(Boolean));
+    if (species.size > 1) return [];
+    return [...found.values()];
+  }
+
+  // Moves everything of `from` (tiles, monsters, decorations, shelter, cost) into `into`.
+  #merge(from, into) {
+    into.rects = [...rectsOf(into), ...rectsOf(from)];
+    fitBox(into);
+    into.area += from.area;
+    into.price += from.price;
+    into.monsterIds.push(...from.monsterIds);
+    into.speciesId ??= from.speciesId;
+    into.breedTimer = Math.max(into.breedTimer ?? 0, from.breedTimer ?? 0);
+    into.decor = [...(into.decor ?? []), ...(from.decor ?? [])];
+    if (from.shelter) {
+      if (into.shelter) this.wallet.earn(from.shelter.price); // one shelter per enclosure: the other is paid back
+      else into.shelter = from.shelter;
+    }
+    for (const r of rectsOf(from)) this.#fillRect(r.x0, r.y0, r.x1, r.y1, into.id);
+    this.enclosures.delete(from.id);
+    this.onEnclosuresMerged(from.id, into.id);
   }
 
   // A decoration (src/config/decor.js) on a tile inside an enclosure of its habitat, one per tile.
@@ -79,7 +124,7 @@ export class Builder {
     if (!e) return fail('notInEnclosure');
     if (e.shelter) return fail('hasShelter');
     if (e.area < BALANCE.shelterMinArea) return fail('enclosureTooSmall');
-    if (tx + 1 > e.x1 || ty + 1 > e.y1) return fail('shelterOutside');
+    if (![[1, 0], [0, 1], [1, 1]].every(([dx, dy]) => containsTile(e, tx + dx, ty + dy))) return fail('shelterOutside');
     for (const d of e.decor ?? []) if (d.tx >= tx && d.tx <= tx + 1 && d.ty >= ty && d.ty <= ty + 1) return fail('occupied');
     if (!this.wallet.spend(BALANCE.shelterCost)) return fail('noMoney');
     e.shelter = { id: `she${this.nextId++}`, family: HABITAT_FAMILY[e.habitat], tx, ty, price: BALANCE.shelterCost, occupant: null };
@@ -141,7 +186,7 @@ export class Builder {
       if (e.monsterIds.length && !this.onEnclosureEmptied([...e.monsterIds])) return fail('enclosureNotEmpty');
       e.monsterIds = [];
       this.enclosures.delete(id);
-      this.#fillRect(e.x0, e.y0, e.x1, e.y1, null);
+      for (const r of rectsOf(e)) this.#fillRect(r.x0, r.y0, r.x1, r.y1, null);
       const decorPrice = (e.decor ?? []).reduce((s, d) => s + d.price, 0) + (e.shelter?.price ?? 0);
       this.wallet.earn((e.price + decorPrice) * BALANCE.demolishRefund);
       return { ok: true, id };
@@ -173,15 +218,14 @@ export class Builder {
     if (!e) return [];
     const out = [];
     const seen = new Set();
-    for (let y = e.y0 - 1; y <= e.y1 + 1; y++) {
-      for (let x = e.x0 - 1; x <= e.x1 + 1; x++) {
-        const inside = x >= e.x0 && x <= e.x1 && y >= e.y0 && y <= e.y1;
-        const corner = (x < e.x0 || x > e.x1) && (y < e.y0 || y > e.y1);
-        if (inside || corner) continue;
-        if (this.grid.isPath(x, y) && !seen.has(`${x},${y}`)) {
-          seen.add(`${x},${y}`);
-          out.push({ tx: x, ty: y });
-        }
+    // the tiles touching a side of the entity (not only a corner)
+    const tiles = this.enclosures.has(id) ? tilesOf(e) : tilesOf({ x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1 });
+    const own = (x, y) => (this.enclosures.has(id) ? containsTile(e, x, y) : x >= e.x0 && x <= e.x1 && y >= e.y0 && y <= e.y1);
+    for (const t of tiles) {
+      for (const [x, y] of [[t.tx + 1, t.ty], [t.tx - 1, t.ty], [t.tx, t.ty + 1], [t.tx, t.ty - 1]]) {
+        if (own(x, y) || seen.has(`${x},${y}`)) continue;
+        seen.add(`${x},${y}`);
+        if (this.grid.isPath(x, y)) out.push({ tx: x, ty: y });
       }
     }
     return out.sort((a, b) => a.tx - b.tx || a.ty - b.ty);

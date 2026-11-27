@@ -20,19 +20,32 @@ function clearance(p, r, others) {
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-// A random point in bounds where a monster of radius r touches no one (best effort if crowded).
-export function findFreeSpot(bounds, others, r, rng) {
+// For a bounds with an `inside(x, y)` test (enclosure that is not a rectangle): the straight walk from
+// `from` to p stays inside.
+function reachable(bounds, from, p) {
+  if (!bounds.inside) return true;
+  if (!bounds.inside(p.x, p.y)) return false;
+  if (!from) return true;
+  const n = Math.ceil(Math.hypot(p.x - from.x, p.y - from.y) * 4);
+  for (let i = 1; i < n; i++) if (!bounds.inside(from.x + ((p.x - from.x) * i) / n, from.y + ((p.y - from.y) * i) / n)) return false;
+  return true;
+}
+
+// A random point in bounds where a monster of radius r touches no one (best effort if crowded);
+// `from`: where the monster stands, for enclosures that are not rectangles.
+export function findFreeSpot(bounds, others, r, rng, from = null) {
   let best = null, bestC = -Infinity;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     const p = {
       x: bounds.minX + rng() * (bounds.maxX - bounds.minX),
       y: bounds.minY + rng() * (bounds.maxY - bounds.minY),
     };
+    if (!reachable(bounds, from, p)) continue;
     const c = clearance(p, r, others);
     if (c >= 0) return p;
     if (c > bestC) { best = p; bestC = c; }
   }
-  return best;
+  return best ?? (from ? { x: from.x, y: from.y } : { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 });
 }
 
 const restTime = (w, rng) => { const p = w.pause ?? PAUSE; return p[0] + rng() * (p[1] - p[0]); };
@@ -60,7 +73,7 @@ export function stepWander(w, others, bounds, dt, rng) {
 
   if (w.rest > 0) {
     w.rest -= dt;
-    if (w.rest <= 0) w.goal = findFreeSpot(bounds, others, w.r, rng);
+    if (w.rest <= 0) w.goal = findFreeSpot(bounds, others, w.r, rng, w);
     return;
   }
   if (!w.goal) {

@@ -58,11 +58,13 @@ const load = (url, repeat, color = false) => new Promise((ok, ko) => loader.load
 }, undefined, ko));
 
 // Periodic noise in [0, 1] over a square canvas (sum of waves with integer frequencies), so it tiles.
-function periodicNoise(size, waves, seed) {
+// t (0..1): time in an animation loop; every wave travels a whole number of wavelengths per loop
+// (1 or 2, either way), so the loop is seamless.
+function periodicNoise(size, waves, seed, t = 0) {
   let s = seed;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const w = Array.from({ length: waves }, () => ({
-    fx: Math.floor(rnd() * 6) + 1, fy: Math.floor(rnd() * 6) - 3, ph: rnd() * 6.283, a: 0.4 + rnd(),
+  const w = Array.from({ length: waves }, (_, i) => ({
+    fx: Math.floor(rnd() * 6) + 1, fy: Math.floor(rnd() * 6) - 3, ph: rnd() * 6.283 + 6.283 * [1, -1, 2, -1][i % 4] * t, a: 0.4 + rnd(),
   }));
   const out = new Float32Array(size * size);
   let min = Infinity, max = -Infinity;
@@ -128,9 +130,9 @@ function normalMapFrom(height, size, strength) {
 
 // Water: deep teal, small ripples (two periodic noise layers), sky reflections and sun glints.
 // `deep`, `light`: rgb of the troughs and of the crests; `sky`: how much the sky is reflected (clear lagoon, dark abyss, murky swamp...).
-function waterMaterial({ deep = [14, 62, 78], light = [36, 96, 108], waves = 6, sky = 1.1 } = {}) {
+function waterMaterial({ deep = [14, 62, 78], light = [36, 96, 108], waves = 6, sky = 1.1 } = {}, t = 0) {
   const size = 256;
-  const a = periodicNoise(size, 14, 11), b = periodicNoise(size, 22, 97);
+  const a = periodicNoise(size, 14, 11, t), b = periodicNoise(size, 22, 97, t);
   const height = a.map((v, i) => v * 0.6 + b[i] * 0.4);
   const normalMap = normalMapFrom(height, size, waves);
   normalMap.repeat.set(N / 2, N / 2);
@@ -280,15 +282,9 @@ const sheet = document.createElement('canvas');
 const sctx = sheet.getContext('2d');
 setBlock(N);
 
-window.renderGround = async (opts) => {
-  if ((opts.block ?? 4) !== N) setBlock(opts.block ?? 4);
-  sctx.clearRect(0, 0, sheet.width, sheet.height);
-  ground.material = opts.water ? waterMaterial(opts.water === true ? {} : opts.water) : await photoMaterial(opts);
-  fitTextures(ground.material);
-  const relief = !opts.water && opts.relief > 0;
-  setGround(relief ? 48 : 1);
-  ground.castShadow = ground.receiveShadow = relief;
-  renderer.render(scene, cam);
+// Cuts the rendered block (from `src`, at SS x the size) into its N x N diamond tiles, drawn into ctx with
+// the block's top left corner at (ox, oy) (row = ty); or returns them as data URLs when ctx is null.
+function cutTiles(src, ctx, ox, oy, format) {
   const tiles = [];
   for (let ty = 0; ty < N; ty++) {
     const row = [];
@@ -303,16 +299,80 @@ window.renderGround = async (opts) => {
       octx.moveTo(TW / 2, -0.5); octx.lineTo(TW + 1, TH / 2); octx.lineTo(TW / 2, TH + 0.5); octx.lineTo(-1, TH / 2);
       octx.closePath();
       octx.clip();
-      octx.drawImage(renderer.domElement, (cx - TW / 2) * SS, (cy - TH / 2) * SS, TW * SS, TH * SS, 0, 0, TW, TH);
+      octx.drawImage(src, (cx - TW / 2) * SS, (cy - TH / 2) * SS, TW * SS, TH * SS, 0, 0, TW, TH);
       octx.restore();
-      if (opts.sheet) sctx.drawImage(out, tx * TW, ty * TH);
-      else row.push(out.toDataURL(opts.format ?? 'image/webp', 0.86));
+      if (ctx) ctx.drawImage(out, ox + tx * TW, oy + ty * TH);
+      else row.push(out.toDataURL(format ?? 'image/webp', 0.86));
     }
     tiles.push(row);
   }
+  return tiles;
+}
+
+async function prepare(opts, t = 0) {
+  if ((opts.block ?? 4) !== N) setBlock(opts.block ?? 4);
+  ground.material = opts.water ? waterMaterial(opts.water === true ? {} : opts.water, t) : await photoMaterial(opts);
+  fitTextures(ground.material);
+  const relief = !opts.water && opts.relief > 0;
+  setGround(relief ? 48 : 1);
+  ground.castShadow = ground.receiveShadow = relief;
+}
+
+window.renderGround = async (opts) => {
+  await prepare(opts);
+  sctx.clearRect(0, 0, sheet.width, sheet.height);
+  renderer.render(scene, cam);
+  const tiles = cutTiles(renderer.domElement, opts.sheet ? sctx : null, 0, 0, opts.format);
   // sheet: all the tiles in one image (N x N grid, row = ty), one file instead of N x N
   if (opts.sheet) return sheet.toDataURL('image/webp', 0.86);
   return tiles;
+};
+
+// A looping animation of the ground: `anim.frames` blocks (4 per row) in one image, frame f at column
+// f % 4, row f / 4, each laid out like the sheet. Water: its waves travel (periodic, so the loop is
+// seamless). Photo grounds (lava): the surface creeps along `anim.flow` ([x, y] tiles per loop) with
+// the flow-map trick: two copies half a loop apart, cross-faded, so it loops without any jump; the glow
+// also breathes (`anim.pulse`).
+const blendA = document.createElement('canvas'), blendB = document.createElement('canvas');
+window.renderGroundAnim = async (opts) => {
+  const { frames = 16, flow = [0.3, 0.15], pulse = 0 } = opts.anim;
+  await prepare(opts);
+  const atlas = document.createElement('canvas');
+  atlas.width = 4 * N * TW; atlas.height = Math.ceil(frames / 4) * N * TH;
+  const actx = atlas.getContext('2d');
+  const mat = ground.material;
+  const texs = ['map', 'normalMap', 'roughnessMap', 'aoMap', 'emissiveMap', 'displacementMap'].map((k) => mat[k]).filter(Boolean);
+  const base = texs.map((t) => ({ t, ox: t.offset.x, oy: t.offset.y, perTile: t.repeat.x / (N + 2 * MARGIN) }));
+  const glow = mat.emissiveIntensity;
+  for (const c of [blendA, blendB]) { c.width = renderer.domElement.width; c.height = renderer.domElement.height; }
+  const shot = (phase, into) => {
+    for (const b of base) b.t.offset.set(b.ox - flow[0] * phase * b.perTile, b.oy + flow[1] * phase * b.perTile);
+    renderer.render(scene, cam);
+    const c = into.getContext('2d');
+    c.clearRect(0, 0, into.width, into.height);
+    c.drawImage(renderer.domElement, 0, 0);
+  };
+  for (let f = 0; f < frames; f++) {
+    const t = f / frames;
+    const ox = (f % 4) * N * TW, oy = Math.floor(f / 4) * N * TH;
+    if (opts.water) {
+      ground.material = waterMaterial(opts.water === true ? {} : opts.water, t);
+      fitTextures(ground.material);
+      renderer.render(scene, cam);
+      cutTiles(renderer.domElement, actx, ox, oy);
+      continue;
+    }
+    mat.emissiveIntensity = glow * (1 + pulse * Math.sin(t * 2 * Math.PI));
+    const wA = 1 - Math.abs(2 * t - 1); // copy A is invisible when it jumps back (t = 0)
+    shot(t, blendA);
+    shot((t + 0.5) % 1, blendB); // copy B jumps at t = 0.5, when A is fully shown
+    const c = blendB.getContext('2d');
+    c.globalAlpha = wA;
+    c.drawImage(blendA, 0, 0);
+    c.globalAlpha = 1;
+    cutTiles(blendB, actx, ox, oy);
+  }
+  return atlas.toDataURL('image/webp', opts.anim.quality ?? 0.8);
 };
 window.N = N;
 window.ready = true;
