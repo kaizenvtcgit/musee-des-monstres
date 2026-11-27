@@ -8,6 +8,7 @@ import {
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { straightLine, pathLineCost } from './pathline.js';
+import { shelterSpots, stepShelterVisit } from './shelterpath.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 
 const fmtCost = (n) => Math.round(n).toLocaleString('fr-FR');
@@ -33,7 +34,7 @@ const SHELTER_IMG = { w: 288, h: 320, groundY: 230, tiles: 2 };
 // Shelters remodelled in Blender (models/blender/musee-decors.blend, scene MuseeShelters) for 3 x 3 tiles.
 const SHELTER_IMG_3D = { lava: { w: 432, h: 480, groundY: 345, tiles: 3 } };
 const SHELTER_RADIUS = 0.8;
-const SHELTER_ENTRANCE = 1.15;
+// (SHELTER_ENTRANCE now lives in src/render/shelterpath.js, with the walk into the cave)
 // Colour of the eyes glowing in the dark of a shelter.
 const EYES = { dragonnet: 0xffa040, kraken: 0xfff070, spectre: 0x9fe6ff, golem: 0xffc850, yeti: 0x8fd0ff };
 // Habitat grounds repeat every GROUND_BLOCK tiles.
@@ -321,9 +322,14 @@ export class GameScene extends Phaser.Scene {
         const F = SHELTER_IMG_3D[sh.family] ?? SHELTER_IMG;
         const k = n / F.tiles; // the image is made for F.tiles x F.tiles tiles
         const c = tileToScreen(sh.tx + half, sh.ty + half);
-        this.decorSprites.push(this.add.image(c.x, c.y, `img-shelter-${sh.family}`)
-          .setOrigin(0.5, F.groundY / F.h)
-          .setDisplaySize((F.w / 2) * k, (F.h / 2) * k).setDepth(c.y + 4 * n));
+        const place = (key, depth) => this.decorSprites.push(this.add.image(c.x, c.y, key)
+          .setOrigin(0.5, F.groundY / F.h).setDisplaySize((F.w / 2) * k, (F.h / 2) * k).setDepth(depth));
+        if (this.textures.exists(`img-shelter-${sh.family}-front`)) {
+          // two layers: the whole cave behind everything in it, and its rock front (the mouth cut out)
+          // in front of a monster walking in, so it really disappears into the cave
+          place(`img-shelter-${sh.family}`, tileToScreen(sh.tx, sh.ty).y - 60);
+          place(`img-shelter-${sh.family}-front`, c.y + 4 * n);
+        } else place(`img-shelter-${sh.family}`, c.y + 4 * n);
       }
       for (const d of e.decor ?? []) {
         // the variant (turned differently) is picked from the tile, so it never changes
@@ -371,24 +377,23 @@ export class GameScene extends Phaser.Scene {
       entry.w.rest = Math.random() * 3;
     }
     entry.atShelter = false;
-    if (sh && m.shelter) {
-      // taking refuge: straight to the entrance of the shelter, then stays there
+    entry.caveDark = 0;
+    entry.sv ??= { stage: null };
+    if (sh && (m.shelter || entry.sv.stage)) {
+      // taking refuge for real (src/render/shelterpath.js): around the rock, in front of the cave,
+      // straight in, rest at the mouth or deep inside; then out again, facing the viewer
       const w = entry.w;
-      const gx = sh.tx + shHalf, gy = sh.ty + shHalf + (SHELTER_ENTRANCE - 0.5) * (shN / 2);
-      const d = Math.hypot(gx - w.x, gy - w.y);
-      const step = (w.speed ?? 0.7) * dt;
-      if (d > step) {
-        w.x += ((gx - w.x) / d) * step;
-        w.y += ((gy - w.y) / d) * step;
-      } else {
-        w.x = gx;
-        w.y = gy;
-        entry.atShelter = true;
+      entry.sv.x = w.x; entry.sv.y = w.y;
+      const visit = stepShelterVisit(entry.sv, shelterSpots(sh, shN), m.shelter, w.speed ?? 0.7, dt);
+      w.x = entry.sv.x; w.y = entry.sv.y;
+      entry.atShelter = visit.atRest;
+      entry.caveDark = visit.dark;
+      if (entry.sv.stage) {
+        w.goal = null;
+        w.rest = 1 + Math.random(); // when it comes out, a short pause before walking away
+        return { x: w.x, y: w.y };
       }
-      w.goal = null;
-      w.rest = 1 + Math.random(); // when it comes out, a short pause before walking away
-      return { x: w.x, y: w.y };
-    }
+    } else entry.sv.stage = null;
     const goal = entry.w.goal;
     stepWander(entry.w, others, bounds, dt, Math.random);
     // a new stroll: now and then a run (monsters with a run animation)
@@ -593,14 +598,19 @@ export class GameScene extends Phaser.Scene {
       // no shadow on the water under a swimming monster, nor under a ghost
       entry.shadow.setVisible(!swimming && !fx.spectral);
       entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
-      // hidden in its shelter: it fades into the dark, only its eyes still glow
-      const hidden = m.shelter === 'inside' && entry.atShelter ? 0 : 1;
+      // in its cave: darker and darker as it goes in, until only its eyes still glow
+      const hidden = 1 - (entry.caveDark ?? 0);
       entry.hideK = (entry.hideK ?? 1) + (hidden - (entry.hideK ?? 1)) * (1 - Math.exp(-dtReal * 4));
       entry.shadow.setAlpha(entry.hideK);
       if (fx.spectral || fx.crossfadeMs) {
         const alpha = fx.spectral ? this.fx.spectral(m, entry, p, time, dt, time < (entry.walkUntil || 0)) : 1;
         this.fx.applyCrossfade(entry, fx.crossfadeMs ?? 1, alpha * entry.hideK);
       } else entry.sprite.setAlpha(entry.hideK);
+      if ((entry.caveDark ?? 0) > 0.01) {
+        // the light of the day fades on it before it disappears in the dark
+        const v = Math.round(255 * (1 - 0.75 * Math.min(1, entry.caveDark * 1.4)));
+        entry.sprite.setTint(Phaser.Display.Color.GetColor(v, Math.round(v * 0.92), Math.round(v * 0.85)));
+      }
       const eyes = Math.max(0, 1 - entry.hideK / 0.35);
       const blink = Math.sin(time * 0.0013 + entry.phase * 3) > -0.93 ? 1 : 0;
       this.fx.shelterEyes(entry, p.x, p.y - 13, eyes * blink, EYES[m.speciesId] ?? 0xffe080);
