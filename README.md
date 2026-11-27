@@ -21,6 +21,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | Commande | Rôle |
 |---|---|
 | `npm run dev` | Lance le jeu en mode développement |
+| http://localhost:5180/?test | **Mode test** : argent illimité, et une partie de test sauvegardée à part (ta vraie partie n'est pas touchée). N'existe qu'en développement, jamais dans la version publiée |
 | `npm test` | Lance les tests automatiques des règles du jeu |
 | `npm run build` | Crée la version à publier dans le dossier `dist/` |
 | `npm run preview` | Ouvre la version publiable pour la vérifier |

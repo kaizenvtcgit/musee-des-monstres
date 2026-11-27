@@ -2,12 +2,18 @@ import Phaser from 'phaser';
 import { createInitialWorld } from './sim/world.js';
 import { GameScene } from './render/GameScene.js';
 import { createUI } from './render/ui.js';
-import { loadGame, startAutosave } from './save/storage.js';
+import { loadGame, startAutosave, useTestSave } from './save/storage.js';
+import { isTestMode } from './testmode.js';
+
+// test mode (http://localhost:5180/?test, development only): unlimited money, separate saved game
+const testMode = isTestMode(window.location.search, import.meta.env.DEV);
+useTestSave(testMode);
 
 // resume the saved game if there is one
 const saved = loadGame();
 const world = saved ?? createInitialWorld(Math.floor(Math.random() * 1e9));
-const ui = createUI(world, { resumed: !!saved });
+world.wallet.unlimited = testMode;
+const ui = createUI(world, { resumed: !!saved, testMode });
 startAutosave(world, () => ui.onSaved());
 
 const game = new Phaser.Game({

@@ -39,9 +39,10 @@ export function createUI(world, opts = {}) {
 }
 
 class UI {
-  constructor(world, { resumed = false } = {}) {
+  constructor(world, { resumed = false, testMode = false } = {}) {
     this.world = world;
     this.resumed = resumed;
+    this.testMode = testMode;
     this.confirmNewGameUntil = 0;
     this.scene = null;
     this.selection = null;
@@ -57,7 +58,8 @@ class UI {
       <div id="decors" class="card"></div>
       <div id="toolbar" class="card"></div>
       <div id="hint" class="card" style="display:none"></div>
-      <div id="help" class="card">${esc(t('hud.help'))}</div>`;
+      <div id="help" class="card">${esc(t('hud.help'))}</div>
+      ${testMode ? `<div id="testbadge" class="card" title="${esc(t('test.help'))}">${esc(t('test.badge'))}</div>` : ''}`;
     this.el = (id) => this.root.querySelector(`#${id}`);
     this.el('hud').addEventListener('pointerdown', (e) => this.onHud(e));
     this.el('panel').addEventListener('pointerdown', (e) => this.onPanel(e));
@@ -281,7 +283,7 @@ class UI {
     const speedBtn = (s, label) => `<button data-speed="${s}" class="${w.speed === s ? 'active' : ''}">${label}</button>`;
     const moneyColor = w.wallet.money < 0 ? 'color:var(--bad)' : '';
     return `
-      <span class="stat" style="${moneyColor}">${esc(t('hud.money', { n: fmt(w.wallet.money) }))}</span>
+      <span class="stat" style="${moneyColor}">${esc(t('hud.money', { n: w.wallet.unlimited ? '∞' : fmt(w.wallet.money) }))}</span>
       <span class="stat">${esc(t('hud.visitors', { n: w.visitors.length }))}</span>
       <span><span class="label">${esc(t('hud.reputation'))}</span><span class="stars">${starText}</span></span>
       <span class="group">${speedBtn(0, '❚❚')}${speedBtn(1, 'x1')}${speedBtn(2, 'x2')}${speedBtn(3, 'x3')}</span>

@@ -2,7 +2,10 @@
 // Every access is guarded: storage can be missing or refused (private mode, blocked site data).
 import { serializeWorld, deserializeWorld } from '../sim/save.js';
 
-const KEY = 'musee-des-monstres:save';
+// The test mode (src/testmode.js) has its own saved game, apart from the real one.
+export const saveKey = (testMode) => (testMode ? 'musee-des-monstres:save-test' : 'musee-des-monstres:save');
+let KEY = saveKey(false);
+export function useTestSave(on) { KEY = saveKey(on); }
 export const AUTOSAVE_SEC = 20;
 
 let enabled = true;

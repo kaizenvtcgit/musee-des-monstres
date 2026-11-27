@@ -114,3 +114,6 @@ button small { display: block; font-size: 11px; color: var(--muted); }
 #hint { position: absolute; bottom: 104px; right: 14px; font-size: 12px; padding: 5px 10px; }
 #help { position: absolute; bottom: 14px; left: 14px; font-size: 11px; padding: 5px 10px; max-width: 220px; color: var(--muted); }
 @media (max-width: 1250px) { #help { display: none; } }
+
+/* test mode badge (src/testmode.js) */
+#testbadge { position: absolute; top: 62px; right: 10px; padding: 5px 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.6px; color: #1a1205; background: rgba(240, 180, 40, 0.92); border-color: rgba(255, 220, 120, 0.9); }

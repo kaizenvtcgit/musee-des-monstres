@@ -15,6 +15,8 @@ export const fr = {
   'save.newGameHelp': 'Efface la sauvegarde et recommence un musée vide',
   'hud.help': 'Clic droit (ou glisser) pour déplacer la vue · molette pour zoomer · Échap pour annuler',
   'tool.select': 'Sélection',
+  'test.badge': 'MODE TEST · argent illimité',
+  'test.help': 'Partie de test séparée de ta vraie partie. Retire « ?test » de l\'adresse pour revenir à ta partie.',
   'cost.path': '{n} cases · {cost} pièces',
   'cost.enclosure': '{w} × {h} · {cost} pièces',
   'event.keeperHired': 'Gardien embauché ({n} pièces / min)',
