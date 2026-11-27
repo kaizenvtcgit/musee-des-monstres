@@ -15,6 +15,7 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { tilesOf, containsTile } from '../sim/enclosure.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { t } from '../i18n/index.js';
+import { BALANCE } from '../config/balance.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
 const ASSETS = import.meta.glob('../assets/3d/**/*.{json,webp}', { eager: true, query: '?url', import: 'default' });
@@ -498,8 +499,7 @@ class Visit {
         awning.rotation.x = 0.25;
         add(new THREE.BoxGeometry(2, 0.5, 1.8), new THREE.MeshStandardMaterial({ color: colour, roughness: 0.7 }), cx, 2.45, cz - 0.2);
       } else if (b.type === 'hatchery') {
-        add(new THREE.SphereGeometry(2.2, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshPhysicalMaterial({ color: 0xdfe9f0, roughness: 0.1, transparent: true, opacity: 0.6 }), cx, 0, cz);
-        add(new THREE.CylinderGeometry(2.3, 2.3, 0.3, 24), white, cx, 0.15, cz);
+        this.placeIncubator(group, cx, cz);
       } else if (b.type === 'expeditionBase') {
         const tent = add(new THREE.ConeGeometry(2, 2.4, 4), new THREE.MeshStandardMaterial({ color: 0xc9b99a, roughness: 0.9 }), cx, 1.2, cz);
         tent.rotation.y = Math.PI / 4;
@@ -515,6 +515,117 @@ class Visit {
     const ex = tx * T, ez = ty * T;
     for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.5, 3.6, 0.5), white, ex + s * 1.5, 1.8, ez);
     add(new THREE.BoxGeometry(3.6, 0.7, 0.2), wood, ex, 3.4, ez);
+  }
+
+  // The incubator (models/incubator.glb, 5 places for eggs: nodes EggSlot_01..05) on its 2 x 2 tiles.
+  placeIncubator(group, cx, cz) {
+    this.eggSlots = [];
+    this.eggs3d = new Map();
+    this.model('incubator').then((m) => {
+      if (this.buildGroup !== group) return; // rebuilt meanwhile
+      const inc = m.scene.clone(true);
+      const size = m.box.getSize(new THREE.Vector3());
+      const s = 4.4 / Math.max(size.x, size.z); // a little smaller than its 5 m square
+      inc.scale.setScalar(s);
+      inc.position.set(cx, -m.box.min.y * s, cz);
+      inc.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = o.receiveShadow = true;
+        o.frustumCulled = true;
+        if (o.material.transparent) {
+          // the glass bell: drawn after the eggs, never hiding them
+          o.material = o.material.clone();
+          o.material.depthWrite = false;
+          o.renderOrder = 3;
+          o.castShadow = false;
+        }
+      });
+      group.add(inc);
+      for (let i = 1; i <= 5; i++) {
+        const slot = inc.getObjectByName(`EggSlot_0${i}`);
+        if (slot) this.eggSlots.push(slot);
+      }
+    }).catch((err) => console.error(err));
+  }
+
+  // One egg mesh per species: an egg shape, its shell coloured like the monster's habitat.
+  eggMesh(egg) {
+    const LOOK = {
+      dragonnet: { color: 0x9a2e1c, spots: 0x2a1410, glow: 0xff6a1a },
+      kraken: { color: 0x2f7f86, spots: 0x123c44, glow: 0x5ee0e6 },
+      spectre: { color: 0x5b4a78, spots: 0x231a33, glow: 0xb48cff },
+      golem: { color: 0x6f7a52, spots: 0x3c4430, glow: 0xffc94a },
+      yeti: { color: 0xdfe8f2, spots: 0x9fb4c8, glow: 0x9fd8ff },
+    }[egg.speciesId] ?? { color: 0xe8dcc0, spots: 0x8a7a5a, glow: 0xffffff };
+    if (!this.eggGeo) {
+      // profile of an egg (narrower at the top), turned around its axis; 1 unit tall, bottom at y = 0
+      const pts = [];
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24, a = t * Math.PI;
+        pts.push(new THREE.Vector2(Math.sin(a) * 0.36 * (1 - 0.18 * t), (1 - Math.cos(a)) / 2));
+      }
+      this.eggGeo = new THREE.LatheGeometry(pts, 28);
+    }
+    // speckles: a small canvas painted once per species
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = `#${LOOK.color.toString(16).padStart(6, '0')}`;
+    g.fillRect(0, 0, 128, 64);
+    g.fillStyle = `#${LOOK.spots.toString(16).padStart(6, '0')}`;
+    let seed = [...egg.speciesId].reduce((s0, ch) => s0 + ch.charCodeAt(0), 1);
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 60; i++) {
+      g.beginPath();
+      g.ellipse(rnd() * 128, rnd() * 64, 1 + rnd() * 3.5, 1 + rnd() * 2.5, rnd() * 3, 0, 6.3);
+      g.fill();
+    }
+    const map = new THREE.CanvasTexture(c);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.wrapS = THREE.RepeatWrapping;
+    const mat = new THREE.MeshPhysicalMaterial({
+      map, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.4,
+      emissive: new THREE.Color(LOOK.glow), emissiveIntensity: 0,
+    });
+    if (egg.rare) mat.sheen = 1; // a rare egg shimmers a little
+    const mesh = new THREE.Mesh(this.eggGeo, mat);
+    mesh.castShadow = true;
+    const pivot = new THREE.Group(); // rocks around its base
+    pivot.add(mesh);
+    return pivot;
+  }
+
+  // Shows the eggs of the hatchery in the incubator's places; they glow brighter and start to rock as
+  // hatching gets near, and shake when ready.
+  updateEggs(time) {
+    if (!this.eggSlots?.length) return;
+    const total = BALANCE.hatchTimeSec;
+    const eggs = this.world.hatchery.eggs.slice(0, this.eggSlots.length);
+    const seen = new Set();
+    eggs.forEach((egg, i) => {
+      seen.add(egg.id);
+      let e = this.eggs3d.get(egg.id);
+      const slot = this.eggSlots[i];
+      if (!e) {
+        e = this.eggMesh(egg);
+        e.userData.phase = Math.random() * 6;
+        this.eggs3d.set(egg.id, e);
+      }
+      if (e.parent !== slot) slot.add(e);
+      // the slots are in the model's (scaled) units: a monster egg about 80 cm tall
+      e.scale.setScalar(0.8 / slot.getWorldScale(new THREE.Vector3()).x);
+      const p = egg.ready ? 1 : Math.min(1, 1 - egg.remainingSec / total);
+      const ph = e.userData.phase;
+      const rock = egg.ready ? 0.22 * Math.sin(time * 14 + ph) : p > 0.75 ? 0.08 * Math.sin(time * 4 + ph) * Math.max(0, Math.sin(time * 0.9 + ph)) : 0;
+      e.rotation.set(rock, 0, rock * 0.6);
+      const mesh = e.children[0];
+      mesh.material.emissiveIntensity = (0.05 + 0.5 * p * p) * (0.75 + 0.25 * Math.sin(time * 2 + ph));
+    });
+    for (const [id, e] of this.eggs3d) {
+      if (seen.has(id)) continue;
+      e.removeFromParent();
+      this.eggs3d.delete(id);
+    }
   }
 
   buildTrees() {
@@ -818,6 +929,7 @@ class Visit {
     this.movePlayer(dt);
     this.syncMonsters(dt);
     this.syncPeople(dt);
+    this.updateEggs(time);
     // living grounds: water ripples, glowing lava breathing
     if (this.waterNormal) this.waterNormal.offset.set(time * 0.012, time * 0.007);
     for (const m of this.lavaMats ?? []) m.emissiveIntensity = 3 + Math.sin(time * 1.3) * 0.5 + Math.sin(time * 3.1) * 0.15;
