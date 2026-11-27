@@ -8,7 +8,10 @@
 
 const MUTE_KEY = 'musee-des-monstres:muted';
 const MAX_VOICES = 8;
-const MIN_GAP_MS = { step: 70, grind: 400, clack: 120, slam: 600, rumble: 1500, pebbles: 250, beat: 90 };
+const MIN_GAP_MS = {
+  step: 70, grind: 400, clack: 120, slam: 600, rumble: 1500, pebbles: 250, beat: 90,
+  pad: 60, snowStep: 60, breath: 1200, snore: 1500, roar: 1500, happy: 1200, grunt: 800, furRub: 250,
+};
 
 export class Sounds {
   constructor(scene) {
@@ -184,6 +187,95 @@ export class Sounds {
   pebbles(out, t) {
     this.clicks(out, t, 7 + Math.floor(Math.random() * 5), 0.6, 0.18);
     return 0.8;
+  }
+
+  // ---- yeti ----
+
+  // a heavy but padded footstep
+  pad(out, t) {
+    this.thump(out, t, 62, 34, 0.22, 0.55);
+    this.hiss(out, t, 0.12, 0.18, 'lowpass', 300);
+    return 0.3;
+  }
+
+  // a foot sinking into snow: a soft crunch
+  snowStep(out, t) {
+    this.thump(out, t, 70, 40, 0.16, 0.35);
+    this.hiss(out, t, 0.18, 0.22, 'bandpass', 2600, 1.4, 0.02);
+    this.clicks(out, t, 6, 0.12, 0.08);
+    return 0.3;
+  }
+
+  // a deep breath out
+  breath(out, t) {
+    this.hiss(out, t, 1.0, 0.12, 'bandpass', 700, 0.7, 0.35);
+    return 1.1;
+  }
+
+  // a light snore: a rumbling breath in
+  snore(out, t) {
+    this.hiss(out, t, 0.9, 0.16, 'lowpass', 260, 0.8, 0.4);
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.value = 58;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 320;
+    o.connect(f).connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 1);
+    return 1;
+  }
+
+  // a voiced sound: a buzzing tone through a mouth-like (formant) filter, its pitch going from f0 to f1
+  voice(out, t, f0, f1, dur, vol, formant, rough = 0) {
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = formant;
+    f.Q.value = 2.5;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.08, dur / 4));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f).connect(g).connect(out);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+    if (rough) this.hiss(out, t, dur, rough, 'bandpass', formant * 1.4, 1.2, 0.05);
+  }
+
+  // a short grunt
+  grunt(out, t) {
+    this.voice(out, t, 120, 95, 0.35, 0.5, 520, 0.08);
+    return 0.45;
+  }
+
+  // joyful hoots, going up
+  happy(out, t) {
+    this.voice(out, t, 210, 330, 0.28, 0.4, 800);
+    this.voice(out, t + 0.3, 240, 400, 0.32, 0.45, 900);
+    return 0.7;
+  }
+
+  // the intimidating roar
+  roar(out, t) {
+    this.voice(out, t, 95, 70, 1.4, 0.7, 600, 0.35);
+    this.voice(out, t + 0.02, 190, 140, 1.3, 0.25, 1100);
+    this.hiss(out, t, 1.2, 0.2, 'lowpass', 180, 0.8, 0.2);
+    return 1.5;
+  }
+
+  // fur rubbed / shaken
+  furRub(out, t) {
+    this.hiss(out, t, 0.35, 0.12, 'bandpass', 3200, 0.9, 0.08);
+    return 0.4;
   }
 
   // a stone fist against a stone chest

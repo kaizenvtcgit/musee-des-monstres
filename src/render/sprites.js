@@ -41,6 +41,10 @@ const ANIM_FPS = {
   dragonnet: { walk: 10, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
   kraken: { walk: 10, idle: 4, threat: 6, look: 5, wiggle: 6, sleep: 4 },
   spectre: { walk: 6, idle: 3, threat: 4, look: 3, haunt: 4, sleep: 2 },
+  yeti: {
+    walk: 10, run: 10 / 0.95, idle: 3, look: 3, scratch: 14 / 3.6, chestbeat: 5, stretch: 12 / 3.5, happy: 5, threat: 5,
+    sleep: 8 / 5, wakeup: 4, sitdown: 4, shake: 16 / 2.8,
+  },
   golem: {
     walk: 8, idle: 3, look: 3, stretch: 12 / 3.5, chestbeat: 5, slam: 6, threat: 4, sleep: 8 / 5, wakeup: 4, sitdown: 4, shake: 5,
   },
@@ -69,11 +73,31 @@ const FRAME_SIZE = { spectre: 176 };
 // - sleep: { chance, loops: [min, max] }: an idle action may be a nap: sit down, sleep, wake up;
 // - angry: { below, kinds }: under this happiness, these actions join the idle ones;
 // - escapedKinds: what it does when it stops while escaped (one of them, picked at each stop);
+// - runSpeed, runChance: now and then a stroll is a run (tiles / s matching its run animation);
+// - escapedMove: the animation it moves with when escaped ('run');
+// - visitorKinds: when visitors watch it, it prefers these actions (it loves company);
+// - sleep.stretchAfter: it stretches after its nap;
+// - cold: breath vapour, snow under its steps and from its fur on snowy ground, its own sounds (monsterfx.js);
 // - glow: its light layer (eyes, cracks): { base } brightness at rest (0..1);
 // - heavy: dust, pebbles, tremors and sounds on the moments of its events file.
 export const MONSTER_FX = {
   spectre: {
     idleAlso: ['threat'], actionLoops: { sleep: 2 }, actionGap: [6, 15], crossfadeMs: 260, spectral: true,
+  },
+  yeti: {
+    crossfadeMs: 280,
+    idleKinds: ['look', 'scratch', 'stretch', 'shake', 'happy', 'chestbeat'],
+    actionGap: [7, 18],
+    walkSpeed: 0.25,
+    runSpeed: 0.56,
+    runChance: 0.12,
+    restRange: [3, 9],
+    sleep: { chance: 0.18, loops: [2, 4], stretchAfter: true },
+    angry: { below: 35, kinds: ['threat'] },
+    escapedMove: 'run',
+    escapedKinds: ['threat', 'look'],
+    visitorKinds: ['happy', 'look'],
+    cold: true,
   },
   golem: {
     crossfadeMs: 320,

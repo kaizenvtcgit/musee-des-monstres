@@ -25,7 +25,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `npm run build` | Crée la version à publier dans le dossier `dist/` |
 | `npm run preview` | Ouvre la version publiable pour la vérifier |
 | `node scripts/balance-sim.js` | Simule 15 minutes de jeu pour régler l'équilibre |
-| `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre (`dragonnet`, `kraken`, `kraken_water`, `spectre`, `golem`) ou des personnes (`people`) à partir des modèles 3D. Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
+| `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre (`dragonnet`, `kraken`, `kraken_water`, `spectre`, `golem`, `yeti`) ou des personnes (`people`) à partir des modèles 3D. Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
 | `node scripts/render-model/render-fence.mjs` | Refait les images des barrières des enclos (barreaux de fer, et vitres là où un enclos touche une allée), dessinées dans `scripts/render-model/fence.html` |
 | `node scripts/render-model/render-ground.mjs` | Refait les sols des enclos (lave, eau, crypte, forêt, neige) à partir de textures photo, téléchargées automatiquement |
 | `node scripts/render-model/render-decor.mjs` | Refait les images des décorations d'enclos (modèles Poly Haven téléchargés automatiquement, ou fabriqués dans `scripts/render-model/decor.html`) |
@@ -61,6 +61,23 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - `docs/` : document de conception et plan de construction.
 
+## Fourrure du yéti
+
+La fourrure est fabriquée par l'outil de rendu (`scripts/render-model/render.html`, fonction `addFur`) avec la technique
+des **coques** (*shell fur*) : le maillage animé est redessiné 20 fois, chaque copie un peu plus loin de la peau, et on ne
+garde que la section des poils sur chaque copie. Les poils suivent donc le squelette et toutes les animations, et se
+voient sur la silhouette. Ils sont « cuits » dans les images du jeu : **aucun coût pendant le jeu**, quel que soit le
+nombre de yétis (pas besoin de niveaux de détail ni de mode « configuration faible » pour la fourrure).
+
+- Zones à poils : le masque `models/yeti/yeti_fur_mask.webp` (dans les UV du modèle), préparé en
+  `yeti_fur_mask_prepared.png` (petits trous bouchés, bords adoucis) ; pas de poils sur les mains et les pieds.
+- Réglages dans `scripts/render-model/render.mjs` (`MODELS.yeti.fur`) : `length` (longueur), `cell` (écart entre les
+  poils), `thickness` (épaisseur), `density`, `layers` (nombre de couches = qualité), `colors` / `colorMix` (blanc,
+  blanc cassé, gris clair, mêlés à la texture d'origine), `rootShade` (ombre à la racine), `gravity`, `regions`
+  (longueur par os : plus longue sur la tête, les épaules et le torse, plus courte sur les jambes et les avant-bras).
+- Mouvement : par animation, `furMove` (`trail` : les pointes traînent derrière le mouvement ; `shake` : secousse
+  pendant *ShakeFur*).
+
 ## Modèles 3D : défauts connus
 
 - **Golem** (`models/golem.glb`) :
@@ -71,3 +88,12 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
   - *ChestBeat* : les poings ne touchent pas le torse (ils restent écartés, à 0,93 unité contre 0,96 au repos). À
     corriger dans le fichier 3D.
   - *Turn Left / Turn Right* ne sont pas utilisés : le jeu oriente le golem selon 8 directions pré-rendues.
+- **Yéti** (`models/yeti.glb`) :
+  - Les mains sont **soudées aux cuisses** dans le maillage, et des sommets des flancs suivent les bras : bras levés
+    (*Stretch*, *Happy*, *Threat*…), une membrane de peau se formait sous les aisselles. Corrigé au chargement, sans
+    modifier le fichier : sous les épaules chaque sommet suit soit le bras soit le corps, et les rares triangles étirés
+    à l'extrême ne sont pas dessinés. Il reste quelques filaments et de petites zones claires sur les cuisses, bras levés.
+    La vraie correction est dans le fichier 3D : séparer les mains des cuisses et revoir les poids des aisselles.
+  - Le masque de fourrure est prudent : environ un tiers de ses zones noires ont une texture de poils (pelage moins
+    dense par endroits).
+  - *Turn Left / Turn Right* ne sont pas utilisés : le jeu oriente le yéti selon 8 directions pré-rendues.

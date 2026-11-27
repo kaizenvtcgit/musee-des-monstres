@@ -322,6 +322,68 @@ export class MonsterFX {
     if (type === 'step' && Math.random() < 0.3) sounds.play('grind', { x, y }, 0.5); // stone rubbing as it moves
   }
 
+  // ---- cold (yeti) ----------------------------------------------------------------------------
+
+  coldEmitters(entry) {
+    if (!entry.vapor) {
+      // breath: small cold puffs that swell, drift up and fade
+      entry.vapor = this.scene.add.particles(0, 0, 'fx-mist', {
+        lifespan: { min: 900, max: 1500 },
+        speedX: { min: -6, max: 6 }, speedY: { min: -14, max: -6 },
+        scale: { start: 0.12, end: 0.55 }, alpha: { start: 0.3, end: 0 },
+        tint: [0xffffff, 0xeef6ff],
+        emitting: false, maxAliveParticles: 16,
+      });
+      // snow: powder kicked up by the feet or shaken off the fur
+      entry.snow = this.scene.add.particles(0, 0, 'fx-mist', {
+        lifespan: { min: 450, max: 900 },
+        speedX: { min: -22, max: 22 }, speedY: { min: -40, max: -10 }, gravityY: 70,
+        scale: { start: 0.14, end: 0.32 }, alpha: { start: 0.65, end: 0 },
+        tint: [0xffffff, 0xf2f7ff, 0xe4eef8],
+        emitting: false, maxAliveParticles: 36,
+      });
+      entry.flakes = this.scene.add.particles(0, 0, 'fx-pebble', {
+        lifespan: { min: 500, max: 900 },
+        speedX: { min: -30, max: 30 }, speedY: { min: -50, max: -10 }, gravityY: 160,
+        scale: { min: 0.2, max: 0.45 }, alpha: { start: 0.95, end: 0.4 }, rotate: { min: 0, max: 360 },
+        tint: [0xffffff, 0xf4f9ff],
+        emitting: false, maxAliveParticles: 30,
+      });
+    }
+    return entry;
+  }
+
+  // A moment of the yeti's animation (see its events file) at world point (x, y).
+  // opts.snowy: it stands on snow; opts.behind: it faces away (its breath goes behind its head).
+  coldEvent(entry, type, x, y, sounds, { snowy, behind }) {
+    const s = entry.sprite;
+    const level = this.detail(s);
+    if (level && s.alpha > 0.3) {
+      this.coldEmitters(entry);
+      entry.vapor.setDepth(s.depth + (behind ? -0.3 : 0.3));
+      entry.snow.setDepth(s.depth + 0.4);
+      entry.flakes.setDepth(s.depth + 0.45);
+      const n = (k) => Math.max(1, Math.round(k * level));
+      const vapor = (k, spread = 3) => { for (let i = 0; i < n(k); i++) entry.vapor.emitParticleAt(x + (Math.random() - 0.5) * spread, y + (Math.random() - 0.5) * spread, 1); };
+      // in the cold its breath shows more
+      if (type === 'breath') vapor(snowy ? 3 : 1);
+      if (type === 'snore') vapor(snowy ? 2 : 1);
+      if (type === 'roar') vapor(snowy ? 8 : 4, 8);
+      if (type === 'happy' || type === 'grunt') vapor(snowy ? 2 : 1);
+      if (snowy && type === 'pad') for (let i = 0; i < n(3); i++) entry.snow.emitParticleAt(x + (Math.random() - 0.5) * 8, y, 1);
+      if (snowy && type === 'padRun') {
+        for (let i = 0; i < n(5); i++) entry.snow.emitParticleAt(x + (Math.random() - 0.5) * 10, y, 1);
+        for (let i = 0; i < n(3); i++) entry.flakes.emitParticleAt(x + (Math.random() - 0.5) * 6, y, 1);
+      }
+      if (snowy && type === 'furShake') for (let i = 0; i < n(4); i++) entry.flakes.emitParticleAt(x + (Math.random() - 0.5) * 26, y + (Math.random() - 0.5) * 30, 1);
+    }
+    const sound = {
+      pad: snowy ? 'snowStep' : 'pad', padRun: snowy ? 'snowStep' : 'pad', breath: 'breath', snore: 'snore', roar: 'roar',
+      happy: 'happy', grunt: 'grunt', beat: 'pad', furRub: 'furRub', furShake: 'furRub', // a furry chest: a muffled thump
+    }[type];
+    if (sound) sounds.play(sound, { x, y }, type === 'padRun' ? 1.2 : 1);
+  }
+
   // shock wave spreading on the ground
   ring(x, y, depth) {
     const r = this.scene.add.image(x, y, 'fx-ring').setDepth(depth).setScale(0.25).setAlpha(0.8);
@@ -376,7 +438,7 @@ export class MonsterFX {
     if (entry.xfade) entry.xfade.destroy();
     if (entry.glow) entry.glow.destroy();
     if (entry.glowSprite) entry.glowSprite.destroy();
-    for (const e of [entry.dust, entry.chips, entry.cloud]) {
+    for (const e of [entry.dust, entry.chips, entry.cloud, entry.vapor, entry.snow, entry.flakes]) {
       if (!e) continue;
       e.stop();
       this.scene.time.delayedCall(1500, () => e.destroy());

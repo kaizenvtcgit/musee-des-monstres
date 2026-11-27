@@ -49,6 +49,42 @@ const MODELS = {
       threat: { clip: 'Threat', frames: 15 },  // 2.5 s at 6 fps (escaped and standing)
     },
   },
+  // yeti: white fur grown on the model by shell fur at render time (scripts/render-model/render.html, addFur);
+  // the skin glued between its hands and thighs is split when its arms rise (armpitFix). Its 8 directions of an
+  // animation are stacked in one sheet; the moments of its steps, breaths, snores... go to yeti-events.json.
+  yeti: {
+    file: 'models/yeti.glb',
+    view: 1.45,
+    feetY: 216,
+    still: true,
+    layout: 'dirs',
+    quality: 0.72,
+    events: 'yeti',
+    armpitFix: { arms: ['UpperArm.L', 'UpperArm.R', 'Forearm.L', 'Forearm.R', 'Hand.L', 'Hand.R'], belowY: 0.25, maxStretch: 2.5 },
+    // fur settings: length (model units, the yeti is 2 tall), cell (spacing of the strands), thickness (of a strand,
+    // 0..0.5 of a cell), density (share of cells with a strand), layers (quality), colors, colorMix (over the
+    // texture), rootShade (darkness at the root), gravity; regions: length factor by bone (0 = no fur)
+    fur: {
+      mask: '/models/yeti/yeti_fur_mask_prepared.png',
+      layers: 20, length: 0.07, cell: 0.014, thickness: 0.45, density: 0.85,
+      colors: ['#ffffff', '#f2eee6', '#d8d8d6'], colorMix: 0.45, rootShade: 0.55, gravity: 0.35,
+      regions: { Head: 1.2, Chest: 1.15, Spine: 1.0, UpperArm: 1.0, Pelvis: 0.85, Thigh: 0.7, Forearm: 0.5, Shin: 0.45, Hand: 0, Foot: 0, Root: 0.8 },
+    },
+    anims: {
+      walk: { clip: 'Walk', frames: 16, furMove: { trail: 6 } },          // 1.6 s at 10 fps
+      run: { clip: 'Run', frames: 10, furMove: { trail: 9 } },            // 0.95 s at 10.5 fps
+      idle: { clip: 'Idle', frames: 12 },                                 // 4 s at 3 fps
+      look: { clip: 'Look Around', frames: 12 },                          // 4 s
+      scratch: { clip: 'ScratchHead', frames: 14, furMove: { trail: 4 } }, // 3.6 s
+      chestbeat: { clip: 'ChestBeat', frames: 15, furMove: { trail: 5 } }, // 3 s at 5 fps
+      stretch: { clip: 'Stretch', frames: 12 },                           // 3.5 s
+      happy: { clip: 'Happy', frames: 14, furMove: { trail: 6 } },        // 2.8 s at 5 fps
+      threat: { clip: 'Threat', frames: 14, furMove: { trail: 6 } },      // 2.8 s at 5 fps
+      sleep: { clip: 'Sleep', frames: 8 },                                // 5 s at 1.6 fps
+      wakeup: { clip: 'WakeUp', frames: 12 },                             // 3 s at 4 fps (backwards: falls asleep)
+      shake: { clip: 'ShakeFur', frames: 16, furMove: { trail: 5, shake: 0.9, shakeHz: 2.3, shakeDur: 2.8 } }, // 2.8 s
+    },
+  },
   // heavy stone golem: bigger than the others; its glowing eyes and golden cracks are a separate light layer
   // (glow) the game brightens and dims; the 8 directions of an animation are stacked in one sheet (layout).
   golem: {
@@ -171,7 +207,7 @@ for (const name of names) {
     console.error(`${name}: missing ${m.file} (see the comments at the top of this script)`);
     continue;
   }
-  await page.evaluate((u) => window.loadModel(u), `/${m.file}`);
+  await page.evaluate(([u, o]) => window.loadModel(u, o), [`/${m.file}`, { fur: m.fur, armpitFix: m.armpitFix }]);
   const opts = {
     view: m.view, frame: m.frame ?? 256, feetY: m.feetY ?? 216, groundY: m.groundY, waterline: m.waterline ?? null,
     hover: m.hover ?? 0, bloom: m.bloom ?? null, dissolve: m.dissolve ?? null, quality: m.quality ?? 0.82, alphaLevels: m.alphaLevels ?? 0,
@@ -215,7 +251,7 @@ async function renderStacked(name, m, opts) {
     }
     save(`src/assets/anims/${name}-${kind}-dirs.webp`, await page.evaluate((u) => window.stackSheets(u), main));
     if (m.glow) save(`src/assets/anims/${name}_glow-${kind}-dirs.webp`, await page.evaluate((u) => window.stackSheets(u), glow));
-    if (m.events) events[kind] = await animEvents(kind, a, opts);
+    if (m.events) events[kind] = await (m.events === 'yeti' ? yetiEvents : animEvents)(kind, a, opts);
   }
   if (m.still) {
     for (const dir of dirs) {
@@ -229,6 +265,49 @@ async function renderStacked(name, m, opts) {
 // Moments to play an effect in an animation, found from the bones: a foot landing, fists hitting the ground,
 // fists raised against the chest... Each event: { f: frame, type, at: [[dx, dy] per direction] } where (dx, dy)
 // is the spot on screen, in frame px from the ground point of the monster.
+// The yeti's moments: soft steps (snow when the ground is snowy), its breath in the cold, snores, a roar...
+// Same format as animEvents. The mouth is a point fixed to the head.
+const MOUTH = 'Head@0,-0.01,0.22';
+async function yetiEvents(kind, a, opts) {
+  const bones = ['Foot.L', 'Foot.R', 'Hand.L', 'Hand.R', 'Chest', MOUTH];
+  const probe = [];
+  for (let dir = 0; dir < 8; dir++) probe.push(await page.evaluate((o) => window.probeBones(o), { ...opts, ...a, dir, bones }));
+  const n = a.frames;
+  const at = (f, bone, ground = false) => probe.map((rows) => {
+    const b = rows[f][bone];
+    return ground ? [b.gx - opts.frame / 2, b.gy - opts.feetY] : [b.x - opts.frame / 2, b.y - opts.feetY];
+  });
+  const h = (f, bone) => probe[0][(f + n) % n][bone].h;
+  const out = [];
+  if (kind === 'walk' || kind === 'run') {
+    for (const foot of ['Foot.L', 'Foot.R']) {
+      const low = Math.min(...probe[0].map((r) => r[foot].h));
+      for (let f = 0; f < n; f++) {
+        if (h(f, foot) <= low + 0.008 && h(f - 1, foot) > low + 0.008) out.push({ f, type: kind === 'run' ? 'padRun' : 'pad', at: at(f, foot, true) });
+      }
+    }
+    out.push({ f: 0, type: 'breath', at: at(0, MOUTH) });
+  }
+  const breaths = { idle: [0, n / 2], look: [0, n / 2], stretch: [n - 2], scratch: [0], wakeup: [n - 2] };
+  for (const f of breaths[kind] ?? []) out.push({ f: Math.floor(f), type: 'breath', at: at(Math.floor(f), MOUTH) });
+  if (kind === 'sleep') for (const f of [0, n / 2]) out.push({ f, type: 'snore', at: at(f, MOUTH) });
+  if (kind === 'threat') out.push({ f: Math.floor(n * 0.3), type: 'roar', at: at(Math.floor(n * 0.3), MOUTH) });
+  if (kind === 'happy') out.push({ f: 1, type: 'happy', at: at(1, MOUTH) });
+  if (kind === 'wakeup') out.push({ f: Math.floor(n / 2), type: 'grunt', at: at(Math.floor(n / 2), MOUTH) });
+  if (kind === 'stretch') out.push({ f: Math.floor(n * 0.4), type: 'grunt', at: at(Math.floor(n * 0.4), MOUTH) });
+  if (kind === 'scratch') for (let f = 3; f < n - 2; f += 3) out.push({ f, type: 'furRub', at: at(f, 'Chest') });
+  if (kind === 'shake') for (let f = 2; f < n - 1; f += 3) out.push({ f, type: 'furShake', at: at(f, 'Chest') });
+  if (kind === 'chestbeat') {
+    for (const hand of ['Hand.L', 'Hand.R']) {
+      for (let f = 0; f < n; f++) {
+        if (h(f, hand) > h(f - 1, hand) && h(f, hand) >= h(f + 1, hand) && h(f, hand) > h(0, hand) + 0.15) out.push({ f, type: 'beat', at: at(f, 'Chest') });
+      }
+    }
+  }
+  out.sort((x, y) => x.f - y.f);
+  return { frames: n, events: out };
+}
+
 async function animEvents(kind, a, opts) {
   const bones = ['Foot.L', 'Foot.R', 'Hand.L', 'Hand.R', 'Chest'];
   const probe = [];

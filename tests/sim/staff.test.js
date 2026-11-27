@@ -132,5 +132,6 @@ describe('species speed', () => {
     };
     expect(travelled('golem')).toBeCloseTo(0.2 * 0.45, 5);
     expect(travelled('dragonnet')).toBeCloseTo(0.2, 5);
+    expect(travelled('yeti')).toBeCloseTo(0.2 * 0.56, 5); // escaped, it runs (its run stride)
   });
 });

@@ -77,6 +77,207 @@ function dissolveBottom(o, frame, feetY, view, hover, { height, edge }, phase) {
   o.putImageData(img, 0, 0);
 }
 
+// ---- arms glued to the body ----------------------------------------------------------------------------------
+// In some auto-rigged models the hands rest against the thighs and the mesh joins them there; flank and hip
+// vertices are also partly bound to the arm bones. When the arm is raised that skin is dragged along: a "bat
+// wing" under the armpit, a bridge from the hand to the thigh. Two remedies, at load time (the file is untouched):
+// 1. fixArmpits: below the shoulders (y < belowY), each vertex follows either its arm or its body, not a mix:
+//    the side holding at least half of its weight takes it all (arm: arms bones; body: the strongest other bone).
+// 2. cullStretched (each frame): triangles stretched over `maxStretch` times their rest area are not drawn.
+function fixArmpits(root, { arms, belowY }) {
+  root.traverse((mesh) => {
+    if (!mesh.isSkinnedMesh) return;
+    const bones = mesh.skeleton.bones;
+    const armIdx = new Set(arms.map((n) => bones.findIndex((b) => b.name === THREE.PropertyBinding.sanitizeNodeName(n))));
+    const pos = mesh.geometry.attributes.position, si = mesh.geometry.attributes.skinIndex, sw = mesh.geometry.attributes.skinWeight;
+    let changed = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) >= belowY) continue;
+      let arm = 0, total = 0, bestBody = -1;
+      for (let k = 0; k < 4; k++) {
+        const w = sw.getComponent(i, k);
+        total += w;
+        if (armIdx.has(si.getComponent(i, k))) arm += w;
+        else if (bestBody < 0 || w > sw.getComponent(i, bestBody)) bestBody = k;
+      }
+      if (arm <= 0 || arm >= total - 1e-4) continue;
+      const keepArm = arm >= total / 2 || bestBody < 0;
+      for (let k = 0; k < 4; k++) {
+        const isArm = armIdx.has(si.getComponent(i, k));
+        if (keepArm) sw.setComponent(i, k, isArm ? sw.getComponent(i, k) / arm : 0);
+        else sw.setComponent(i, k, k === bestBody ? 1 : 0);
+      }
+      changed++;
+    }
+    si.needsUpdate = sw.needsUpdate = true;
+    mesh.userData.stretchCheck = true;
+    // where the glued skin is cut, the inside of the body shows: draw it (shaded like the skin) rather than a hole
+    mesh.material.side = THREE.DoubleSide;
+    console.log(`arm / body split: ${changed} vertices`);
+  });
+}
+
+// Hides the triangles stretched beyond `maxStretch` times their rest area in the current pose (all the meshes
+// sharing the geometry, so the fur shells too).
+function cullStretched(maxStretch) {
+  gltf.scene.traverse((mesh) => {
+    if (!mesh.isSkinnedMesh || !mesh.userData.stretchCheck) return;
+    const geo = mesh.geometry;
+    if (!geo.userData.fullIndex) {
+      geo.userData.fullIndex = geo.index.array.slice();
+      const pos = geo.attributes.position, idx = geo.userData.fullIndex;
+      const area = new Float32Array(idx.length / 3);
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      for (let t = 0; t < idx.length; t += 3) {
+        a.fromBufferAttribute(pos, idx[t]); b.fromBufferAttribute(pos, idx[t + 1]); c.fromBufferAttribute(pos, idx[t + 2]);
+        area[t / 3] = b.sub(a).cross(c.sub(a)).length();
+      }
+      geo.userData.restArea = area;
+      geo.userData.skinned = new Float32Array(pos.count * 3);
+    }
+    const idx = geo.userData.fullIndex, rest = geo.userData.restArea, sk = geo.userData.skinned;
+    const n = geo.attributes.position.count, v = new THREE.Vector3();
+    mesh.skeleton.update();
+    for (let i = 0; i < n; i++) { mesh.getVertexPosition(i, v); sk[i * 3] = v.x; sk[i * 3 + 1] = v.y; sk[i * 3 + 2] = v.z; }
+    const kept = [];
+    let hidden = 0;
+    for (let t = 0; t < idx.length; t += 3) {
+      const i = idx[t] * 3, j = idx[t + 1] * 3, k = idx[t + 2] * 3;
+      const ux = sk[j] - sk[i], uy = sk[j + 1] - sk[i + 1], uz = sk[j + 2] - sk[i + 2];
+      const wx = sk[k] - sk[i], wy = sk[k + 1] - sk[i + 1], wz = sk[k + 2] - sk[i + 2];
+      const cx = uy * wz - uz * wy, cy = uz * wx - ux * wz, cz = ux * wy - uy * wx;
+      const ar = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      if (rest[t / 3] > 1e-9 && ar > maxStretch * rest[t / 3]) { hidden++; continue; }
+      kept.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    geo.setIndex(kept);
+    geo.userData.hidden = hidden;
+  });
+}
+
+// ---- shell fur ------------------------------------------------------------------------------------------------
+// The skinned mesh is drawn again `layers` times, each copy pushed a little further out along the (skinned) normals:
+// on every layer only the cross-sections of hair strands are kept (the rest is discarded, no transparency), so
+// together they make strands standing out of the skin, also on the silhouette. Strands are cells of a 3-D grid on
+// the rest-pose surface (so they keep their place when the body moves), each with its own length, thickness and
+// shade; they taper toward their tip and are darker at their root. Their length follows the bones (fur.regions)
+// and the mask (fur.mask, in the model's UVs: white = fur); the original texture shows through. `sway` (set for
+// each frame, see furMotion) bends the tips: they trail behind the moves and shake with the body.
+//
+// fur: { mask, layers, length, cell, thickness, density, colors, colorMix, rootShade, gravity, regions }
+let furShells = [];
+let furOpts = {};
+let maxStretch = 0;
+const furUniforms = { uSway: { value: new THREE.Vector3() } };
+
+async function addFur(root, fur) {
+  const mask = await new THREE.TextureLoader().loadAsync(fur.mask);
+  mask.flipY = false; // glTF UVs
+  mask.colorSpace = THREE.NoColorSpace;
+  let mesh;
+  root.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
+  const geo = mesh.geometry;
+  // length factor per vertex, from its bones
+  const bones = mesh.skeleton.bones;
+  const regionOf = (name) => {
+    for (const [key, v] of Object.entries(fur.regions)) if (name.startsWith(THREE.PropertyBinding.sanitizeNodeName(key))) return v;
+    return 1;
+  };
+  const boneLen = bones.map((b) => regionOf(b.name));
+  const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const len = new Float32Array(si.count);
+  for (let i = 0; i < si.count; i++) {
+    let l = 0;
+    for (let k = 0; k < 4; k++) l += sw.getComponent(i, k) * boneLen[si.getComponent(i, k)];
+    len[i] = l;
+  }
+  geo.setAttribute('furLen', new THREE.BufferAttribute(len, 1));
+  const restPos = geo.attributes.position.clone();
+  geo.setAttribute('restPos', restPos);
+
+  for (let layer = 1; layer <= fur.layers; layer++) {
+    const h = layer / fur.layers;
+    const mat = mesh.material.clone();
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, furUniforms, {
+        uH: { value: h }, uLength: { value: fur.length }, uCell: { value: fur.cell }, uThick: { value: fur.thickness },
+        uDensity: { value: fur.density }, uMask: { value: mask }, uGravity: { value: fur.gravity },
+        uC0: { value: new THREE.Color(fur.colors[0]) }, uC1: { value: new THREE.Color(fur.colors[1]) }, uC2: { value: new THREE.Color(fur.colors[2]) },
+        uColorMix: { value: fur.colorMix }, uRootShade: { value: fur.rootShade },
+      });
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>
+          attribute float furLen; attribute vec3 restPos;
+          uniform float uH, uLength, uGravity; uniform vec3 uSway;
+          varying vec3 vRest; varying float vLen; varying vec2 vFurUv;`)
+        .replace('#include <skinning_vertex>', `#include <skinning_vertex>
+          vRest = restPos; vLen = furLen; vFurUv = uv;
+          float reach = uH * uLength * furLen;
+          // out along the skinned normal; the tips bend with gravity and the motion (quadratic: the root stays put)
+          transformed += normalize(objectNormal) * reach;
+          transformed += (vec3(0.0, -uGravity, 0.0) + uSway) * uH * uH * uLength * furLen;`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          uniform float uH, uCell, uThick, uDensity, uColorMix, uRootShade;
+          uniform sampler2D uMask; uniform vec3 uC0, uC1, uC2;
+          varying vec3 vRest; varying float vLen; varying vec2 vFurUv;
+          vec3 hash3(vec3 p) {
+            p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
+            return fract(sin(p) * 43758.5453);
+          }`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          float maskV = texture2D(uMask, vFurUv).r;
+          float allowed = maskV * vLen;
+          // the strand of this cell: its centre is jittered inside the cell
+          vec3 cell = floor(vRest / uCell);
+          vec3 rnd = hash3(cell);
+          vec3 centre = (cell + 0.2 + 0.6 * rnd) * uCell;
+          float d = length(vRest - centre) / uCell;
+          float strandH = allowed * (0.55 + 0.45 * rnd.y);       // its own length
+          if (rnd.z > uDensity || uH > strandH) discard;         // sparse cells, and above its tip
+          float t = uH / max(strandH, 1e-3);
+          if (d > uThick * pow(1.0 - t, 0.7)) discard;           // tapered strand
+          // colour: the original texture, toward white / off-white / light grey, darker at the root
+          float pick = hash3(cell + 17.0).x;
+          vec3 furC = pick < 0.5 ? mix(uC0, uC1, pick * 2.0) : mix(uC1, uC2, (pick - 0.5) * 2.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, furC, uColorMix) * mix(uRootShade, 1.0, pow(t, 0.8));`);
+    };
+    mat.customProgramCacheKey = () => `fur-${layer}`;
+    const shell = new THREE.SkinnedMesh(geo, mat);
+    shell.bind(mesh.skeleton, mesh.bindMatrix);
+    shell.frustumCulled = false;
+    shell.userData.furShell = true;
+    mesh.parent.add(shell);
+    furShells.push(shell);
+  }
+}
+
+// Bends the fur tips for this frame: they trail behind the chest's motion, plus a shake when asked.
+const furPrev = new THREE.Vector3();
+function furMotion(clipTimeS, dtS, { trail = 6, shake = 0, shakeHz = 9 } = {}, first) {
+  if (!furShells.length) return;
+  const chest = gltf.scene.getObjectByName('Chest');
+  if (!chest) return;
+  gltf.scene.updateMatrixWorld(true);
+  const p = chest.getWorldPosition(new THREE.Vector3());
+  const v = first ? new THREE.Vector3() : p.clone().sub(furPrev).divideScalar(Math.max(dtS, 1e-3));
+  furPrev.copy(p);
+  const sway = v.multiplyScalar(-trail * 0.05);
+  if (shake) {
+    // a shake that swells and dies away over the clip (shakeDur: its length)
+    const env = furOpts.shakeDur ? Math.sin(Math.PI * Math.min(1, clipTimeS / furOpts.shakeDur)) : 1;
+    const a = shake * env * Math.sin(clipTimeS * shakeHz * Math.PI * 2);
+    sway.add(new THREE.Vector3(a, Math.abs(a) * 0.3, a * 0.5));
+  }
+  sway.clampLength(0, 1.2);
+  furUniforms.uSway.value.copy(sway);
+}
+
+// an animation of the loaded model, by name (used by the test scripts)
+window.gltfAnim = (name) => gltf.animations.find((a) => a.name === name);
+window.renderState = () => ({ pivot, mixer, gltf });
+window.cullStretched = (k) => cullStretched(k);
+
 const clipTime = (c, i, frames, reverse) => (c.duration * (reverse ? (frames - i) % frames : i)) / frames;
 
 function setEmissive(k) {
@@ -159,7 +360,11 @@ window.probeBones = ({ clip, dir, frames, view, frame = 256, feetY = 216, revers
     gltf.scene.updateMatrixWorld(true);
     const row = {};
     for (const b of bones) {
-      gltf.scene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(b)).getWorldPosition(v);
+      // "Head@0,0.17,0.24": a point fixed to a bone (offset in the bone's own space), e.g. the mouth
+      const [name, off] = b.split('@');
+      const bone = gltf.scene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
+      if (off) v.fromArray(off.split(',').map(Number)).applyMatrix4(bone.matrixWorld);
+      else bone.getWorldPosition(v);
       const h = v.y - box.min.y;
       const g = new THREE.Vector3(v.x, box.min.y, v.z).project(cam); // the ground right below the bone
       v.project(cam);
@@ -216,9 +421,14 @@ function addBloom(o, frame, { strength, radius, tint = [1, 1, 1] }) {
 }
 const ctx = out.getContext('2d');
 
-window.loadModel = async (url) => {
+// opts.armpitFix, opts.fur: see fixArmpits and addFur below.
+window.loadModel = async (url, opts = {}) => {
   if (gltf) pivot.remove(gltf.scene);
+  furShells = [];
   gltf = await new GLTFLoader().loadAsync(url);
+  if (opts.armpitFix) fixArmpits(gltf.scene, opts.armpitFix);
+  maxStretch = opts.armpitFix?.maxStretch ?? 0;
+  if (opts.fur) await addFur(gltf.scene, opts.fur);
   // no weapons in a family museum (some character packs hold a pistol or a sword)
   gltf.scene.traverse((o) => { if (/pistol|sword|gun|rifle|knife/i.test(o.name)) o.visible = false; });
   pivot.add(gltf.scene);
@@ -244,7 +454,9 @@ window.loadModel = async (url) => {
 // halo of `glowRadius` px: a separate light layer the game brightens or dims (see monsterfx.js).
 window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216, groundY = null, waterline = null,
   hover = 0, bloom = null, dissolve = null, alphaLevels = 0, format = 'image/webp', quality = 0.82,
-  reverse = false, emissiveScale = 1, glowOnly = false, glowRadius = 2 }) => {
+  reverse = false, emissiveScale = 1, glowOnly = false, glowRadius = 2, furMove = {}, noFur = false }) => {
+  furOpts = furMove;
+  for (const sh of furShells) sh.visible = !noFur;
   if (waterline !== null) groundY = box.min.y + waterline;
   if (hover) groundY = box.min.y - hover;
   renderer.setSize(frame * SS, frame * SS);
@@ -270,7 +482,17 @@ window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216,
   ctx.imageSmoothingQuality = 'high';
   ctx.clearRect(0, 0, out.width, out.height);
   for (let i = 0; i < frames; i++) {
+    if (furShells.length) {
+      // fur motion from the previous moment of the clip (the first frame looks at the last one: loops)
+      const dtS = c.duration / frames;
+      const tNow = clipTime(c, i, frames, reverse);
+      mixer.setTime((tNow - dtS + c.duration) % c.duration);
+      furMotion(0, dtS, furOpts, true);
+      mixer.setTime(tNow);
+      furMotion(tNow, dtS, furOpts, false);
+    }
     mixer.setTime(clipTime(c, i, frames, reverse)); // exactly one loop of the clip
+    if (maxStretch) { gltf.scene.updateMatrixWorld(true); cullStretched(maxStretch); }
     const x = frame * (i % cols), y = frame * Math.floor(i / cols);
     if (waterline !== null) {
       // under the surface: tinted and faint

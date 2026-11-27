@@ -27,7 +27,7 @@ export const SPECIES = {
   spectre: { id: 'spectre', habitat: 'dark', minArea: 6, appeal: 8, decayPerMin: 4, special: 'phases' },
   // speed: how fast it wanders when escaped (x the base speed); the golem is slow and heavy
   golem: { id: 'golem', habitat: 'forest', minArea: 4, appeal: 4, decayPerMin: 1.5, special: null, speed: 0.45 },
-  yeti: { id: 'yeti', habitat: 'ice', minArea: 8, appeal: 7, decayPerMin: 3, special: 'lovesVisitors' },
+  yeti: { id: 'yeti', habitat: 'ice', minArea: 8, appeal: 7, decayPerMin: 3, special: 'lovesVisitors', speed: 0.56 }, // escaped: runs
 };
 
 export const LOCATIONS = {

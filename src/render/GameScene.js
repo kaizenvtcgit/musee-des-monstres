@@ -374,7 +374,15 @@ export class GameScene extends Phaser.Scene {
       w.rest = 1 + Math.random(); // when it comes out, a short pause before walking away
       return { x: w.x, y: w.y };
     }
+    const goal = entry.w.goal;
     stepWander(entry.w, others, bounds, dt, Math.random);
+    // a new stroll: now and then a run (monsters with a run animation)
+    const fx = monsterFx(m.speciesId);
+    if (fx.runChance && entry.w.goal && entry.w.goal !== goal) {
+      entry.running = Math.random() < fx.runChance;
+      entry.w.speed = entry.running ? fx.runSpeed : fx.walkSpeed;
+    }
+    if (!entry.w.goal) entry.running = false;
     return { x: entry.w.x, y: entry.w.y };
   }
 
@@ -413,12 +421,18 @@ export class GameScene extends Phaser.Scene {
       const loops = a + Math.floor(Math.random() * (b - a + 1));
       const wake = this.animDuration(anim, 'wakeup');
       queue = [step('sitdown', wake), step('sleep', loops * this.animDuration(anim, 'sleep')), step('wakeup', wake)];
+      if (fx.sleep.stretchAfter && this.animDuration(anim, 'stretch')) queue.push(step('stretch', this.animDuration(anim, 'stretch')));
       entry.lastAction = 'sleep';
     } else if (fx.statue && entry.lastAction !== 'statue' && Math.random() < 0.3) {
       queue = [step('statue', fx.statue[0] + Math.random() * (fx.statue[1] - fx.statue[0]))];
       entry.lastAction = 'statue';
     } else if (actions.length) {
-      const choices = actions.length > 1 ? actions.filter((a) => a.kind !== entry.lastAction) : actions;
+      let choices = actions.length > 1 ? actions.filter((a) => a.kind !== entry.lastAction) : actions;
+      // watched by visitors: it shows off (if it likes company)
+      if (fx.visitorKinds && m && this.watchersOf(m.enclosureId) >= 2 && Math.random() < 0.6) {
+        const fav = choices.filter((a) => fx.visitorKinds.includes(a.kind));
+        if (fav.length) choices = fav;
+      }
       const a = choices[Math.floor(Math.random() * choices.length)];
       queue = [step(a.kind, a.duration)];
       entry.lastAction = a.kind;
@@ -433,6 +447,13 @@ export class GameScene extends Phaser.Scene {
     return queue[0].kind;
   }
 
+  // Visitors watching an enclosure right now.
+  watchersOf(enclosureId) {
+    let n = 0;
+    for (const v of this.world.visitors) if (v.state === 'watching' && v.target?.id === enclosureId) n++;
+    return n;
+  }
+
   // Length of one loop of an animation, in game seconds (0 if there is none).
   animDuration(anim, kind) {
     const a = this.anims.get(`${anim}-${kind}-d0`);
@@ -440,7 +461,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Effects on the moments of the animation (a foot landing, a slam...), from the events file of the species.
-  animationEvents(entry, anim, sheetKind, p, scale) {
+  animationEvents(entry, anim, sheetKind, p, scale, m, enc) {
     const s = entry.sprite;
     const evs = MONSTER_EVENTS[anim]?.[sheetKind]?.events;
     if (!evs || !s.anims.currentAnim) return;
@@ -451,7 +472,12 @@ export class GameScene extends Phaser.Scene {
     for (const e of evs) {
       if (e.f !== idx) continue;
       const [dx, dy] = e.at[entry.dir] ?? e.at[0];
-      this.fx.heavyEvent(entry, e.type, p.x + dx * scale, p.y + dy * scale, this.sounds);
+      const x = p.x + dx * scale, y = p.y + dy * scale;
+      if (monsterFx(anim).cold) {
+        // snow underfoot (and on its fur) only in a snowy enclosure
+        const snowy = !!enc && HABITAT_FAMILY[enc.habitat] === 'ice';
+        this.fx.coldEvent(entry, e.type, x, y, this.sounds, { snowy, behind: entry.dir >= 3 && entry.dir <= 5 });
+      } else this.fx.heavyEvent(entry, e.type, x, y, this.sounds);
     }
   }
 
@@ -503,6 +529,7 @@ export class GameScene extends Phaser.Scene {
         if (animated) {
           const walking = time < (entry.walkUntil || 0);
           let kind = walking ? (m.state === 'escaped' && hasFlyAnimation(this, m.speciesId) ? 'fly' : 'walk') : 'idle';
+          if (walking && ((m.state === 'escaped' && fx.escapedMove) || entry.running)) kind = fx.escapedMove ?? 'run';
           if (walking) {
             entry.actionQueue = null;
             entry.escKind = null;
@@ -565,7 +592,7 @@ export class GameScene extends Phaser.Scene {
       if (fx.glow && sheetKind) {
         this.fx.glowLayer(entry, m, anim, sheetKind === 'sitdown' ? 'wakeup' : sheetKind, heavyKind, fx, time, dtReal, entry.actionProgress ?? 0);
       }
-      if (fx.heavy && sheetKind) this.animationEvents(entry, anim, sheetKind, p, look.scale);
+      if ((fx.heavy || fx.cold) && sheetKind) this.animationEvents(entry, anim, sheetKind, p, look.scale, m, enc);
       const top = look.directional ? entry.sprite.displayHeight * directionalOriginY(anim) : entry.sprite.displayHeight;
       this.setBubble(entry, m.state === 'escaped' ? 'bubble-scared' : null, p, top - 10);
     }

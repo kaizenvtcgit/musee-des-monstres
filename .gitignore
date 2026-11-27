@@ -8,3 +8,5 @@ models/people/
 models/textures/
 # Poly Haven models of the enclosure decorations, downloaded by scripts/render-model/render-decor.mjs
 models/decor/
+# yeti textures extracted from the GLB and the fur mask (large; the mask is documented in the README)
+models/yeti/*.png
