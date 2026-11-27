@@ -498,12 +498,7 @@ class Visit {
         const [model, front] = n % 2 ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
         this.placeModel(group, model, cx, cz, 2.4, this.faceToPath(b) + front);
       } else if (b.type === 'souvenir') {
-        const colour = '#2e6fb0';
-        add(new THREE.BoxGeometry(1.8, 2.2, 1.6), wood, cx, 1.1, cz);
-        add(new THREE.BoxGeometry(1.9, 0.12, 0.5), white, cx, 1.05, cz + 0.95); // counter
-        const awning = add(new THREE.BoxGeometry(2.3, 0.08, 1.2), new THREE.MeshStandardMaterial({ map: this.stripes(colour, '#f6f1e7'), roughness: 0.8 }), cx, 2.45, cz + 0.4);
-        awning.rotation.x = 0.25;
-        add(new THREE.BoxGeometry(2, 0.5, 1.8), new THREE.MeshStandardMaterial({ color: colour, roughness: 0.7 }), cx, 2.45, cz - 0.2);
+        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 2.6, this.faceToPath(b));
       } else if (b.type === 'hatchery') {
         this.placeIncubator(group, cx, cz);
       } else if (b.type === 'expeditionBase') {
