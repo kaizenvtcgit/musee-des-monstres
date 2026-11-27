@@ -8,7 +8,7 @@ import {
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { straightLine, pathLineCost } from './pathline.js';
-import { enclosurePrice } from '../sim/build.js';
+import { enclosurePrice, shelterSize } from '../sim/build.js';
 
 const fmtCost = (n) => Math.round(n).toLocaleString('fr-FR');
 import { t as tr } from '../i18n/index.js';
@@ -313,10 +313,13 @@ export class GameScene extends Phaser.Scene {
     for (const e of this.world.builder.enclosures.values()) {
       const sh = e.shelter;
       if (sh && this.textures.exists(`img-shelter-${sh.family}`)) {
-        // centre of its 2 x 2 tiles; drawn a little in front so a monster just behind it is hidden by it
-        const c = tileToScreen(sh.tx + 0.5, sh.ty + 0.5);
+        // centre of its n x n tiles; the image (made for 2 x 2) is scaled to its size; drawn a little
+        // in front so a monster just behind it is hidden by it
+        const n = shelterSize(sh), half = (n - 1) / 2, k = n / 2;
+        const c = tileToScreen(sh.tx + half, sh.ty + half);
         this.decorSprites.push(this.add.image(c.x, c.y, `img-shelter-${sh.family}`)
-          .setOrigin(0.5, SHELTER_IMG.groundY / SHELTER_IMG.h).setDisplaySize(SHELTER_IMG.w / 2, SHELTER_IMG.h / 2).setDepth(c.y + 8));
+          .setOrigin(0.5, SHELTER_IMG.groundY / SHELTER_IMG.h)
+          .setDisplaySize((SHELTER_IMG.w / 2) * k, (SHELTER_IMG.h / 2) * k).setDepth(c.y + 8 * k));
       }
       for (const d of e.decor ?? []) {
         // the variant (turned differently) is picked from the tile, so it never changes
@@ -355,7 +358,8 @@ export class GameScene extends Phaser.Scene {
     // big decorations are obstacles too (the low ones are walked over), and the shelter
     for (const d of e.decor ?? []) if (!ENCLOSURE_DECOR[d.type]?.low) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     const sh = e.shelter;
-    if (sh) others.push({ x: sh.tx + 0.5, y: sh.ty + 0.5, r: SHELTER_RADIUS });
+    const shN = shelterSize(sh), shHalf = (shN - 1) / 2;
+    if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: SHELTER_RADIUS * (shN / 2) });
     if (!entry.w || entry.wEnc !== e.id) {
       entry.wEnc = e.id;
       const fx = monsterFx(m.speciesId);
@@ -366,7 +370,7 @@ export class GameScene extends Phaser.Scene {
     if (sh && m.shelter) {
       // taking refuge: straight to the entrance of the shelter, then stays there
       const w = entry.w;
-      const gx = sh.tx + 0.5, gy = sh.ty + SHELTER_ENTRANCE;
+      const gx = sh.tx + shHalf, gy = sh.ty + shHalf + (SHELTER_ENTRANCE - 0.5) * (shN / 2);
       const d = Math.hypot(gx - w.x, gy - w.y);
       const step = (w.speed ?? 0.7) * dt;
       if (d > step) {
@@ -933,13 +937,14 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     if (type === 'shelter') {
-      // its 2 x 2 tiles from the pointed one
+      // its n x n tiles from the pointed one
       const t = grid.getTile(tile.tx, tile.ty);
       const enc = t.occupant && this.world.builder.enclosures.get(t.occupant);
+      const n = BALANCE.shelterSize;
       const ok = !!enc && HABITAT_FAMILY[enc.habitat] === this.tool.family && !enc.shelter
-        && enc.area >= BALANCE.shelterMinArea && tile.tx + 1 <= enc.x1 && tile.ty + 1 <= enc.y1;
-      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-        if (grid.inBounds(tile.tx + dx, tile.ty + dy)) diamondAt(tile.tx + dx, tile.ty + dy, ok);
+        && enc.area >= BALANCE.shelterMinArea && tile.tx + n - 1 <= enc.x1 && tile.ty + n - 1 <= enc.y1;
+      for (let dy = 0; dy < n; dy++) {
+        for (let dx = 0; dx < n; dx++) if (grid.inBounds(tile.tx + dx, tile.ty + dy)) diamondAt(tile.tx + dx, tile.ty + dy, ok);
       }
       return;
     }

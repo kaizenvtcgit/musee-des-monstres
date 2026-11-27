@@ -10,31 +10,41 @@ import { serializeWorld, deserializeWorld } from '../../src/sim/save.js';
 
 function setup() {
   const b = new Builder(new Grid(20, 20), new Wallet(100000));
-  const id = b.placeEnclosure(2, 2, 5, 5, 'forest').id;
+  const id = b.placeEnclosure(2, 2, 6, 6, 'forest').id; // 5 x 5
   return { b, e: b.enclosures.get(id) };
 }
 
 describe('shelters', () => {
-  it('takes 2 x 2 tiles of an enclosure, one per enclosure, and costs its price', () => {
+  it('takes 3 x 3 tiles of an enclosure (big enough for the monsters), one per enclosure, and costs its price', () => {
     const { b, e } = setup();
+    expect(BALANCE.shelterSize).toBe(3);
     const money = b.wallet.money;
     expect(b.placeShelter(3, 3).ok).toBe(true);
     expect(b.wallet.money).toBe(money - BALANCE.shelterCost);
-    expect(e.shelter).toMatchObject({ tx: 3, ty: 3, family: 'forest' });
+    expect(e.shelter).toMatchObject({ tx: 3, ty: 3, size: 3, family: 'forest' });
     expect(b.placeShelter(2, 2).reason).toBe('hasShelter');
-    for (const [x, y] of [[3, 3], [4, 3], [3, 4], [4, 4]]) expect(b.shelterAt(x, y)).not.toBeNull();
-    expect(b.shelterAt(5, 5)).toBeNull();
+    for (let y = 3; y <= 5; y++) for (let x = 3; x <= 5; x++) expect(b.shelterAt(x, y)).not.toBeNull();
+    expect(b.shelterAt(6, 6)).toBeNull();
+    expect(b.shelterAt(2, 3)).toBeNull();
   });
 
   it('is refused outside an enclosure, past its edge, in a small one, or on a decoration', () => {
     const { b } = setup();
     expect(b.placeShelter(10, 10).reason).toBe('notInEnclosure');
-    expect(b.placeShelter(5, 3).reason).toBe('shelterOutside');
+    expect(b.placeShelter(5, 3).reason).toBe('shelterOutside'); // would reach x = 7
     b.placeDecor(2, 2, 'fern');
     expect(b.placeShelter(2, 2).reason).toBe('occupied');
-    const small = b.placeEnclosure(10, 10, 11, 11, 'lava').id;
+    const small = b.placeEnclosure(10, 10, 12, 13, 'lava').id; // 3 x 4 = 12 tiles: no room left around it
+    expect(BALANCE.shelterMinArea).toBe(15);
     expect(b.placeShelter(10, 10).reason).toBe('enclosureTooSmall');
     expect(b.enclosures.get(small).shelter ?? null).toBeNull();
+  });
+
+  it('an old 2 x 2 shelter from a saved game keeps its size', () => {
+    const { b, e } = setup();
+    e.shelter = { id: 'she99', family: 'forest', tx: 3, ty: 3, price: BALANCE.shelterCost, occupant: null }; // no size
+    expect(b.shelterAt(4, 4)).not.toBeNull();
+    expect(b.shelterAt(5, 5)).toBeNull();
   });
 
   it('no decoration can go on it; demolishing it refunds half, without the enclosure', () => {
@@ -92,10 +102,10 @@ describe('shelters', () => {
   it('is kept in a saved game', () => {
     const w = createInitialWorld(7);
     w.wallet.money = 10000;
-    const e = [...w.builder.enclosures.values()][0];
-    // the start enclosure is 3 x 2 = 6 tiles: just big enough
+    const id = w.builder.placeEnclosure(24, 26, 27, 29, 'forest').id; // 4 x 4 = 16 tiles
+    const e = w.builder.enclosures.get(id);
     expect(w.builder.placeShelter(e.x0, e.y0).ok).toBe(true);
     const loaded = deserializeWorld(JSON.parse(JSON.stringify(serializeWorld(w))));
-    expect([...loaded.builder.enclosures.values()][0].shelter).toMatchObject({ tx: e.x0, ty: e.y0 });
+    expect(loaded.builder.enclosures.get(id).shelter).toMatchObject({ tx: e.x0, ty: e.y0, size: 3 });
   });
 });

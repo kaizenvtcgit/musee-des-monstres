@@ -32,7 +32,8 @@ export const BALANCE = {
   // shelter in an enclosure (a cave, a mausoleum...): the monster takes refuge in it now and then
   shelterCost: 600,
   shelterHappiness: 10, // + happiness points for the monsters of an enclosure that has one
-  shelterMinArea: 6, // the enclosure must be big enough to keep room outside it
+  shelterSize: 3, // tiles per side: big enough for the largest monsters (a dragonnet is ~2 tiles long)
+  shelterMinArea: 15, // the enclosure must be big enough to keep room outside it (9 tiles + 6)
   shelterStay: [20, 45], // seconds spent in it
   shelterCooldown: [30, 60], // seconds before going back
   shelterEntranceAppeal: 0.6, // a monster resting at the entrance is still seen, a bit less

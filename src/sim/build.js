@@ -12,6 +12,9 @@ const BUILDING_DEFS = {
 
 const fail = (reason) => ({ ok: false, reason });
 
+// Tiles per side of a shelter (shelters of older saved games, without a size, are 2 x 2).
+export const shelterSize = (s) => (s && s.size) || 2;
+
 // Price of an enclosure dragged between two corner tiles (any order): its area x the price per tile.
 // Used both to build it and to show its price while dragging, so the two always match.
 export function enclosurePrice(ax, ay, bx, by) {
@@ -77,19 +80,20 @@ export class Builder {
     return { ok: true, id, enclosureId: e.id };
   }
 
-  // A shelter (cave, mausoleum... see SHELTERS) on 2 x 2 tiles of an enclosure, from (tx, ty) to (tx + 1, ty + 1);
+  // A shelter (cave, mausoleum... see SHELTERS) on size x size tiles of an enclosure, from (tx, ty);
   // one per enclosure. Its entrance faces +y (down-left on screen).
   placeShelter(tx, ty) {
+    const n = BALANCE.shelterSize;
     const tile = this.grid.getTile(tx, ty);
     if (!tile) return fail('outOfBounds');
     const e = tile.occupant && this.enclosures.get(tile.occupant);
     if (!e) return fail('notInEnclosure');
     if (e.shelter) return fail('hasShelter');
     if (e.area < BALANCE.shelterMinArea) return fail('enclosureTooSmall');
-    if (tx + 1 > e.x1 || ty + 1 > e.y1) return fail('shelterOutside');
-    for (const d of e.decor ?? []) if (d.tx >= tx && d.tx <= tx + 1 && d.ty >= ty && d.ty <= ty + 1) return fail('occupied');
+    if (tx + n - 1 > e.x1 || ty + n - 1 > e.y1) return fail('shelterOutside');
+    for (const d of e.decor ?? []) if (d.tx >= tx && d.tx < tx + n && d.ty >= ty && d.ty < ty + n) return fail('occupied');
     if (!this.wallet.spend(BALANCE.shelterCost)) return fail('noMoney');
-    e.shelter = { id: `she${this.nextId++}`, family: HABITAT_FAMILY[e.habitat], tx, ty, price: BALANCE.shelterCost, occupant: null };
+    e.shelter = { id: `she${this.nextId++}`, family: HABITAT_FAMILY[e.habitat], tx, ty, size: n, price: BALANCE.shelterCost, occupant: null };
     this.grid.version++; // redraw
     return { ok: true, id: e.shelter.id, enclosureId: e.id };
   }
@@ -99,7 +103,8 @@ export class Builder {
     const tile = this.grid.getTile(tx, ty);
     const e = tile && tile.occupant && this.enclosures.get(tile.occupant);
     const s = e && e.shelter;
-    return s && tx >= s.tx && tx <= s.tx + 1 && ty >= s.ty && ty <= s.ty + 1 ? { shelter: s, enclosure: e } : null;
+    const n = shelterSize(s);
+    return s && tx >= s.tx && tx < s.tx + n && ty >= s.ty && ty < s.ty + n ? { shelter: s, enclosure: e } : null;
   }
 
   // The decoration on this tile, with its enclosure, or null.
