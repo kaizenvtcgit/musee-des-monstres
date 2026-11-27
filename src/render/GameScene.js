@@ -8,6 +8,8 @@ import {
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
+// Size of the barrier renders (scripts/render-model/fence.html) and the row where the ground is.
+const FENCE_IMG = { w: 128, h: 192, groundY: 134 };
 // Game seconds of plain idling between two idle actions (wing flap, look around...).
 const IDLE_ACTION_GAP = [4, 12];
 const MONSTER_RADIUS = { dragonnet: 0.6, kraken: 0.6, spectre: 0.4, golem: 0.45, yeti: 0.45 };
@@ -193,7 +195,8 @@ export class GameScene extends Phaser.Scene {
         for (let j = e.y0; j <= e.y1; j++) segs.push([e.x0 - 0.5, j, 'Y'], [e.x1 + 0.5, j, 'Y']);
         for (const [mx, my, axis] of segs) {
           const c = tileToScreen(mx, my);
-          this.fenceSprites.push(this.add.image(c.x, c.y, `img-prop-fence${axis}`).setDisplaySize(64, 64).setDepth(c.y));
+          this.fenceSprites.push(this.add.image(c.x, c.y, `img-prop-fence${axis}`)
+            .setOrigin(0.5, FENCE_IMG.groundY / FENCE_IMG.h).setDisplaySize(FENCE_IMG.w / 2, FENCE_IMG.h / 2).setDepth(c.y));
         }
         continue;
       }
