@@ -618,7 +618,9 @@ export class GameScene extends Phaser.Scene {
 
   syncEntities(time, dt = 0) {
     const { world } = this;
-    const dtReal = Math.min(0.1, (time - (this.lastSyncTime ?? time)) / 1000); // real seconds, for eased lights
+    // real seconds, for eased lights; never negative (a clock going back made the easing blow up and
+    // a monster vanish, only its eyes left)
+    const dtReal = Math.max(0, Math.min(0.1, (time - (this.lastSyncTime ?? time)) / 1000));
     this.lastSyncTime = time;
     for (const e of this.decorSmoke ?? []) e.timeScale = world.speed || 0.0001; // smoke follows the game speed
     const alive = new Set();
@@ -718,7 +720,8 @@ export class GameScene extends Phaser.Scene {
       entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(depth - 0.5).setScale(shadow[0], shadow[1]);
       // in its cave: darker and darker as it goes in, until only its eyes still glow
       const hidden = 1 - (entry.caveDark ?? 0);
-      entry.hideK = (entry.hideK ?? 1) + (hidden - (entry.hideK ?? 1)) * (1 - Math.exp(-dtReal * 4));
+      const k0 = Number.isFinite(entry.hideK) ? entry.hideK : 1;
+      entry.hideK = Math.max(0, Math.min(1, k0 + (hidden - k0) * (1 - Math.exp(-dtReal * 4))));
       entry.shadow.setAlpha(entry.hideK);
       if (fx.spectral || fx.crossfadeMs) {
         const alpha = fx.spectral ? this.fx.spectral(m, entry, p, time, dt, time < (entry.walkUntil || 0)) : 1;
