@@ -39,6 +39,9 @@ export class World {
     this.completedObjectives = new Set();
     this.events = [];
     this.builder.onEnclosureEmptied = (monsterId) => this.#onEnclosureEmptied(monsterId);
+    this.builder.onEnclosuresMerged = (fromId, toId) => {
+      for (const m of this.monsters.values()) if (m.enclosureId === fromId) m.enclosureId = toId;
+    };
     this.builder.isBlocked = (x, y) => {
       for (const m of this.monsters.values()) {
         if (m.state !== 'escaped') continue;

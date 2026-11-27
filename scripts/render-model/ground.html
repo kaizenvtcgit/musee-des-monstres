@@ -11,14 +11,13 @@
 // fit together seamlessly: the game picks tile (tx mod N, ty mod N).
 import * as THREE from 'three';
 
-const N = 4;                       // tiles per side of a block
+let N = 4;                         // tiles per side of a block (opts.block, 4 by default)
 const TW = 128, TH = 64;           // one tile image (2x the in-game size)
 const SS = 2;                      // supersampling
 const PX_PER_UNIT = (TW / 2) / Math.SQRT1_2; // one tile = 1 world unit = TW px across (2:1 isometric)
-const W = N * TW, H = N * TH;      // the whole block
+let W = N * TW, H = N * TH;        // the whole block
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-renderer.setSize(W * SS, H * SS);
 renderer.setClearColor(0, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
@@ -30,13 +29,8 @@ sun.position.set(-4, 7, 2); // from the upper left, like the other renders
 scene.add(sun);
 
 // Isometric camera centred on the block (world X = tile x, world Z = tile y).
-const cam = new THREE.OrthographicCamera(
-  -(W / 2) / PX_PER_UNIT, (W / 2) / PX_PER_UNIT, (H / 2) / PX_PER_UNIT, -(H / 2) / PX_PER_UNIT, 0.01, 200,
-);
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 200);
 const el = THREE.MathUtils.degToRad(30), az = THREE.MathUtils.degToRad(45);
-const target = new THREE.Vector3(N / 2, 0, N / 2);
-cam.position.set(Math.sin(az) * Math.cos(el) * 40, Math.sin(el) * 40, Math.cos(az) * Math.cos(el) * 40).add(target);
-cam.lookAt(target);
 
 // Sky for reflections (water, ice): vertical gradient.
 function skyTexture() {
@@ -64,11 +58,13 @@ const load = (url, repeat, color = false) => new Promise((ok, ko) => loader.load
 }, undefined, ko));
 
 // Periodic noise in [0, 1] over a square canvas (sum of waves with integer frequencies), so it tiles.
-function periodicNoise(size, waves, seed) {
+// t (0..1): time in an animation loop; every wave travels a whole number of wavelengths per loop
+// (1 or 2, either way), so the loop is seamless.
+function periodicNoise(size, waves, seed, t = 0) {
   let s = seed;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const w = Array.from({ length: waves }, () => ({
-    fx: Math.floor(rnd() * 6) + 1, fy: Math.floor(rnd() * 6) - 3, ph: rnd() * 6.283, a: 0.4 + rnd(),
+  const w = Array.from({ length: waves }, (_, i) => ({
+    fx: Math.floor(rnd() * 6) + 1, fy: Math.floor(rnd() * 6) - 3, ph: rnd() * 6.283 + 6.283 * [1, -1, 2, -1][i % 4] * t, a: 0.4 + rnd(),
   }));
   const out = new Float32Array(size * size);
   let min = Infinity, max = -Infinity;
@@ -83,6 +79,31 @@ function periodicNoise(size, waves, seed) {
   for (let i = 0; i < out.length; i++) out[i] = (out[i] - min) / (max - min);
   return out;
 }
+// Organic periodic noise in [0, 1] (value noise on a wrapping grid, several octaves): soft round patches,
+// with no direction (the wave sums above make stripes at this scale).
+function patchNoise(size, cells, seed, octaves = 3) {
+  let s = seed;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const out = new Float32Array(size * size);
+  let amp = 1;
+  for (let o = 0, c = cells; o < octaves; o++, c *= 2, amp *= 0.5) {
+    const grid = Array.from({ length: c * c }, rnd);
+    const v = (i, j) => grid[((j % c + c) % c) * c + ((i % c + c) % c)];
+    const sm = (t) => t * t * (3 - 2 * t);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const gx = x / size * c, gy = y / size * c, x0 = Math.floor(gx), y0 = Math.floor(gy);
+        const fx = sm(gx - x0), fy = sm(gy - y0);
+        out[y * size + x] += amp * ((v(x0, y0) * (1 - fx) + v(x0 + 1, y0) * fx) * (1 - fy) + (v(x0, y0 + 1) * (1 - fx) + v(x0 + 1, y0 + 1) * fx) * fy);
+      }
+    }
+  }
+  let min = Infinity, max = -Infinity;
+  for (const v of out) { min = Math.min(min, v); max = Math.max(max, v); }
+  for (let i = 0; i < out.length; i++) out[i] = (out[i] - min) / (max - min);
+  return out;
+}
+
 // Normal map from a periodic height field.
 function normalMapFrom(height, size, strength) {
   const c = document.createElement('canvas');
@@ -109,9 +130,9 @@ function normalMapFrom(height, size, strength) {
 
 // Water: deep teal, small ripples (two periodic noise layers), sky reflections and sun glints.
 // `deep`, `light`: rgb of the troughs and of the crests; `sky`: how much the sky is reflected (clear lagoon, dark abyss, murky swamp...).
-function waterMaterial({ deep = [14, 62, 78], light = [36, 96, 108], waves = 6, sky = 1.1 } = {}) {
+function waterMaterial({ deep = [14, 62, 78], light = [36, 96, 108], waves = 6, sky = 1.1 } = {}, t = 0) {
   const size = 256;
-  const a = periodicNoise(size, 14, 11), b = periodicNoise(size, 22, 97);
+  const a = periodicNoise(size, 14, 11, t), b = periodicNoise(size, 22, 97, t);
   const height = a.map((v, i) => v * 0.6 + b[i] * 0.4);
   const normalMap = normalMapFrom(height, size, waves);
   normalMap.repeat.set(N / 2, N / 2);
@@ -137,13 +158,18 @@ function waterMaterial({ deep = [14, 62, 78], light = [36, 96, 108], waves = 6, 
 }
 
 // A photo material from ambientCG: /tex/<id>/<id>_1K-JPG_<Map>.jpg; `repeat` = texture copies per block.
-async function photoMaterial({ id, repeat, tint, emissive, emissiveIntensity, roughness, normalScale = 1, envMapIntensity = 0.3 }) {
+// relief: real bumps from the texture's height map (in tiles), lit by the sun with cast shadows, so the
+// ground is not a flat picture: stones, crusts and clods stand out and shade their neighbours.
+async function photoMaterial({ id, repeat, tint, emissive, emissiveIntensity, roughness, normalScale = 1, envMapIntensity = 0.3, macro, relief = 0 }) {
   const base = `/tex/${id}/${id}_1K-JPG_`;
   const opt = (name, color) => load(`${base}${name}.jpg`, repeat, color).catch(() => null);
-  const [map, normalMap, roughnessMap, aoMap, emissiveMap] = await Promise.all([
-    opt('Color', true), opt('NormalGL'), opt('Roughness'), opt('AmbientOcclusion'), emissive ? opt('Emission', true) : null,
+  const [map, normalMap, roughnessMap, aoMap, emissiveMap, displacementMap] = await Promise.all([
+    macro ? macroMap(`${base}Color.jpg`, repeat, macro) : opt('Color', true),
+    opt('NormalGL'), opt('Roughness'), opt('AmbientOcclusion'), emissive ? opt('Emission', true) : null,
+    relief ? opt('Displacement') : null,
   ]);
   return new THREE.MeshStandardMaterial({
+    displacementMap, displacementScale: relief, displacementBias: -relief * 0.5,
     map, normalMap, roughnessMap, aoMap, aoMapIntensity: 1,
     normalScale: new THREE.Vector2(normalScale, normalScale),
     color: new THREE.Color(tint ?? 0xffffff),
@@ -153,12 +179,99 @@ async function photoMaterial({ id, repeat, tint, emissive, emissiveIntensity, ro
   });
 }
 
-const geo = new THREE.PlaneGeometry(N, N);
-geo.rotateX(-Math.PI / 2);
-geo.translate(N / 2, 0, N / 2);
-geo.setAttribute('uv2', geo.attributes.uv);
-const ground = new THREE.Mesh(geo);
+const ground = new THREE.Mesh();
 scene.add(ground);
+
+// Sizes the renderer, the camera and the ground plane for a block of n x n tiles.
+function setBlock(n) {
+  N = n; W = N * TW; H = N * TH;
+  renderer.setSize(W * SS, H * SS);
+  cam.left = -(W / 2) / PX_PER_UNIT; cam.right = (W / 2) / PX_PER_UNIT;
+  cam.top = (H / 2) / PX_PER_UNIT; cam.bottom = -(H / 2) / PX_PER_UNIT;
+  cam.updateProjectionMatrix();
+  const target = new THREE.Vector3(N / 2, 0, N / 2);
+  cam.position.set(Math.sin(az) * Math.cos(el) * 40, Math.sin(el) * 40, Math.cos(az) * Math.cos(el) * 40).add(target);
+  cam.lookAt(target);
+  // the sun follows the block, its shadow map covers it (plus the margin)
+  sun.position.set(-4, 7, 2).multiplyScalar(3).add(target);
+  sun.target.position.copy(target);
+  const sc = sun.shadow.camera;
+  sc.left = sc.bottom = -(N + 4); sc.right = sc.top = N + 4; sc.near = 0.1; sc.far = 80;
+  sc.updateProjectionMatrix();
+  sheet.width = N * TW; sheet.height = N * TH;
+  segments = -1;
+}
+
+// The plane reaches one tile past the block on every side (MARGIN), with the textures continuing
+// across: the bumps of the next block cast their shadows into this one, so blocks still join seamlessly.
+const MARGIN = 1;
+let segments = -1;
+function setGround(perTile) {
+  if (perTile === segments) return;
+  segments = perTile;
+  const size = N + 2 * MARGIN, seg = Math.max(1, size * perTile);
+  const geo = new THREE.PlaneGeometry(size, size, seg, seg);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(N / 2, 0, N / 2);
+  ground.geometry.dispose();
+  ground.geometry = geo;
+}
+// Textures are set up for a block (uv 0..1 = N tiles): stretch them over the bigger plane.
+function fitTextures(mat) {
+  const k = (N + 2 * MARGIN) / N;
+  for (const key of ['map', 'normalMap', 'roughnessMap', 'aoMap', 'emissiveMap', 'displacementMap']) {
+    const t = mat[key];
+    if (!t) continue;
+    const r = t.repeat.x;
+    t.repeat.set(r * k, r * k);
+    t.offset.set(-r * MARGIN / N, -r * MARGIN / N);
+  }
+}
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.01;
+scene.add(sun.target);
+
+// Large soft patches baked into the colour map over the whole block (lighter / darker, drier / greener),
+// so a lawn of repeated photo copies does not look like wallpaper. The patches tile with the block.
+// macro: { amount (brightness +-), warm (red-yellow shift of the light patches), seed }
+async function macroMap(url, repeat, { amount = 0.25, warm = 0, seed = 7 }) {
+  const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = url; });
+  const S = 2048, cell = S / repeat;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  for (let y = 0; y < repeat; y++) for (let x = 0; x < repeat; x++) g.drawImage(img, x * cell, y * cell, cell, cell);
+  const NS = 128;
+  const a = patchNoise(NS, 3, seed, 3), b = patchNoise(NS, 6, seed * 31 + 5, 2);
+  const data = g.getImageData(0, 0, S, S);
+  const d = data.data, k = S / NS;
+  // bilinear sample of the periodic noise
+  const at = (n, x, y) => {
+    const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+    const v = (i, j) => n[((j + NS) % NS) * NS + ((i + NS) % NS)];
+    return (v(x0, y0) * (1 - fx) + v(x0 + 1, y0) * fx) * (1 - fy) + (v(x0, y0 + 1) * (1 - fx) + v(x0 + 1, y0 + 1) * fx) * fy;
+  };
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const v = at(a, x / k, y / k) * 0.65 + at(b, x / k, y / k) * 0.35 - 0.5; // -0.5 .. 0.5
+      const f = 1 + v * amount * 2, w = Math.max(0, v) * warm * 2;
+      const i = (y * S + x) * 4;
+      d[i] = Math.min(255, d[i] * f * (1 + w * 0.9));
+      d[i + 1] = Math.min(255, d[i + 1] * f * (1 + w * 0.35));
+      d[i + 2] = Math.min(255, d[i + 2] * f * (1 - w * 0.2));
+    }
+  }
+  g.putImageData(data, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
 
 const out = document.createElement('canvas');
 out.width = TW; out.height = TH;
@@ -166,13 +279,12 @@ const octx = out.getContext('2d');
 
 // Renders the block for one habitat and returns the N x N tile images (data URLs, row by row: [ty][tx]).
 const sheet = document.createElement('canvas');
-sheet.width = N * TW; sheet.height = N * TH;
 const sctx = sheet.getContext('2d');
+setBlock(N);
 
-window.renderGround = async (opts) => {
-  sctx.clearRect(0, 0, sheet.width, sheet.height);
-  ground.material = opts.water ? waterMaterial(opts.water === true ? {} : opts.water) : await photoMaterial(opts);
-  renderer.render(scene, cam);
+// Cuts the rendered block (from `src`, at SS x the size) into its N x N diamond tiles, drawn into ctx with
+// the block's top left corner at (ox, oy) (row = ty); or returns them as data URLs when ctx is null.
+function cutTiles(src, ctx, ox, oy, format) {
   const tiles = [];
   for (let ty = 0; ty < N; ty++) {
     const row = [];
@@ -187,16 +299,132 @@ window.renderGround = async (opts) => {
       octx.moveTo(TW / 2, -0.5); octx.lineTo(TW + 1, TH / 2); octx.lineTo(TW / 2, TH + 0.5); octx.lineTo(-1, TH / 2);
       octx.closePath();
       octx.clip();
-      octx.drawImage(renderer.domElement, (cx - TW / 2) * SS, (cy - TH / 2) * SS, TW * SS, TH * SS, 0, 0, TW, TH);
+      octx.drawImage(src, (cx - TW / 2) * SS, (cy - TH / 2) * SS, TW * SS, TH * SS, 0, 0, TW, TH);
       octx.restore();
-      if (opts.sheet) sctx.drawImage(out, tx * TW, ty * TH);
-      else row.push(out.toDataURL(opts.format ?? 'image/webp', 0.86));
+      if (ctx) ctx.drawImage(out, ox + tx * TW, oy + ty * TH);
+      else row.push(out.toDataURL(format ?? 'image/webp', 0.86));
     }
     tiles.push(row);
   }
+  return tiles;
+}
+
+async function prepare(opts, t = 0) {
+  if ((opts.block ?? 4) !== N) setBlock(opts.block ?? 4);
+  ground.material = opts.water ? waterMaterial(opts.water === true ? {} : opts.water, t) : await photoMaterial(opts);
+  fitTextures(ground.material);
+  const relief = !opts.water && opts.relief > 0;
+  setGround(relief ? 48 : 1);
+  ground.castShadow = ground.receiveShadow = relief;
+}
+
+window.renderGround = async (opts) => {
+  await prepare(opts);
+  sctx.clearRect(0, 0, sheet.width, sheet.height);
+  renderer.render(scene, cam);
+  const tiles = cutTiles(renderer.domElement, opts.sheet ? sctx : null, 0, 0, opts.format);
   // sheet: all the tiles in one image (N x N grid, row = ty), one file instead of N x N
   if (opts.sheet) return sheet.toDataURL('image/webp', 0.86);
   return tiles;
+};
+
+// The emission map of a photo ground (lava) over the whole block, its glow multiplied by travelling
+// waves of heat (periodic noise at time t, so the loop is seamless): brighter and dimmer bands pass
+// through the cracks while the rock does not move.
+let emissionImg = null;
+async function heatMap({ id, repeat, anim }, t) {
+  if (!emissionImg || emissionImg.id !== id) {
+    const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = `/tex/${id}/${id}_1K-JPG_Emission.jpg`; });
+    const S = 2048, cell = S / repeat;
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d');
+    for (let y = 0; y < repeat; y++) for (let x = 0; x < repeat; x++) g.drawImage(img, x * cell, y * cell, cell, cell);
+    emissionImg = { id, data: g.getImageData(0, 0, S, S), S };
+  }
+  const { data, S } = emissionImg;
+  const NS = 128;
+  const a = periodicNoise(NS, 9, 5, t), b = periodicNoise(NS, 14, 41, t);
+  const out = new ImageData(S, S);
+  const d = out.data, src = data.data, k = S / NS;
+  const lo = anim.heat[0], hi = anim.heat[1];
+  for (let y = 0; y < S; y++) {
+    const gy = y / k, y0 = Math.floor(gy), fy = gy - y0, y1 = (y0 + 1) % NS;
+    for (let x = 0; x < S; x++) {
+      const gx = x / k, x0 = Math.floor(gx), fx = gx - x0, x1 = (x0 + 1) % NS;
+      const v = (n) => (n[y0 * NS + x0] * (1 - fx) + n[y0 * NS + x1] * fx) * (1 - fy) + (n[y1 * NS + x0] * (1 - fx) + n[y1 * NS + x1] * fx) * fy;
+      const h = v(a) * 0.6 + v(b) * 0.4;
+      const f = lo + (hi - lo) * h * h;
+      const i = (y * S + x) * 4;
+      d[i] = Math.min(255, src[i] * f); d[i + 1] = Math.min(255, src[i + 1] * f); d[i + 2] = Math.min(255, src[i + 2] * f); d[i + 3] = 255;
+    }
+  }
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  c.getContext('2d').putImageData(out, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// A looping animation of the ground: `anim.frames` blocks (4 per row) in one image, frame f at column
+// f % 4, row f / 4, each laid out like the sheet. Water: its waves travel (periodic, so the loop is
+// seamless). Lava (`anim.heat`: [dimmest, brightest] glow factor): heatMap above. Other photo grounds: the surface creeps along `anim.flow` ([x, y] tiles per loop) with
+// the flow-map trick: two copies half a loop apart, cross-faded, so it loops without any jump; the glow
+// also breathes (`anim.pulse`).
+const blendA = document.createElement('canvas'), blendB = document.createElement('canvas');
+window.renderGroundAnim = async (opts) => {
+  const { frames = 16, flow = [0.3, 0.15], pulse = 0 } = opts.anim;
+  await prepare(opts);
+  const atlas = document.createElement('canvas');
+  atlas.width = 4 * N * TW; atlas.height = Math.ceil(frames / 4) * N * TH;
+  const actx = atlas.getContext('2d');
+  const mat = ground.material;
+  const texs = ['map', 'normalMap', 'roughnessMap', 'aoMap', 'emissiveMap', 'displacementMap'].map((k) => mat[k]).filter(Boolean);
+  const base = texs.map((t) => ({ t, ox: t.offset.x, oy: t.offset.y, perTile: t.repeat.x / (N + 2 * MARGIN) }));
+  const glow = mat.emissiveIntensity;
+  for (const c of [blendA, blendB]) { c.width = renderer.domElement.width; c.height = renderer.domElement.height; }
+  const shot = (phase, into) => {
+    for (const b of base) b.t.offset.set(b.ox - flow[0] * phase * b.perTile, b.oy + flow[1] * phase * b.perTile);
+    renderer.render(scene, cam);
+    const c = into.getContext('2d');
+    c.clearRect(0, 0, into.width, into.height);
+    c.drawImage(renderer.domElement, 0, 0);
+  };
+  for (let f = 0; f < frames; f++) {
+    const t = f / frames;
+    const ox = (f % 4) * N * TW, oy = Math.floor(f / 4) * N * TH;
+    if (opts.water) {
+      ground.material = waterMaterial(opts.water === true ? {} : opts.water, t);
+      fitTextures(ground.material);
+      renderer.render(scene, cam);
+      cutTiles(renderer.domElement, actx, ox, oy);
+      continue;
+    }
+    mat.emissiveIntensity = glow * (1 + pulse * Math.sin(t * 2 * Math.PI));
+    if (opts.anim.heat) {
+      // the rock stays still (sharp); waves of heat run through its cracks
+      if (mat.emissiveMap) mat.emissiveMap.dispose();
+      mat.emissiveMap = await heatMap(opts, t);
+      const k = (N + 2 * MARGIN) / N;
+      mat.emissiveMap.repeat.set(k, k);
+      mat.emissiveMap.offset.set(-MARGIN / N, -MARGIN / N);
+      mat.needsUpdate = true;
+      renderer.render(scene, cam);
+      cutTiles(renderer.domElement, actx, ox, oy);
+      continue;
+    }
+    const wA = 1 - Math.abs(2 * t - 1); // copy A is invisible when it jumps back (t = 0)
+    shot(t, blendA);
+    shot((t + 0.5) % 1, blendB); // copy B jumps at t = 0.5, when A is fully shown
+    const c = blendB.getContext('2d');
+    c.globalAlpha = wA;
+    c.drawImage(blendA, 0, 0);
+    c.globalAlpha = 1;
+    cutTiles(blendB, actx, ox, oy);
+  }
+  return atlas.toDataURL('image/webp', opts.anim.quality ?? 0.8);
 };
 window.N = N;
 window.ready = true;

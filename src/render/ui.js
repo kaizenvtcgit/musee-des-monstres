@@ -263,6 +263,8 @@ class UI {
     if (btn.dataset.speed !== undefined) this.world.setSpeed(Number(btn.dataset.speed));
     if (btn.dataset.ticket) this.world.setTicketPrice(this.world.ticketPrice + Number(btn.dataset.ticket));
     if (btn.dataset.mute !== undefined && this.scene?.sounds) this.scene.sounds.setMuted(!this.scene.sounds.muted);
+    // the 3D walk: its code (three.js, models) is only downloaded now
+    if (btn.dataset.visit !== undefined && this.scene) import('../render3d/visit.js').then((m) => m.startVisit(this.scene));
     if (btn.dataset.newgame !== undefined) {
       // first click asks for confirmation, a second click within a few seconds starts over
       if (performance.now() < this.confirmNewGameUntil) {
@@ -297,6 +299,7 @@ class UI {
     const saved = performance.now() - (this.savedAt ?? -1e9) < SAVED_BADGE_MS;
     const muted = this.scene?.sounds?.muted;
     return `<span class="saved ${saved ? 'show' : ''}" title="${esc(t('save.autosave'))}">✓ ${esc(t('save.saved'))}</span>
+      <button data-visit title="${esc(t('visit.button.help'))}">${esc(t('visit.button'))}</button>
       <button data-mute title="${esc(t(muted ? 'sound.unmute' : 'sound.mute'))}">${muted ? '🔇' : '🔊'}</button>
       <button data-newgame class="${confirming ? 'danger' : ''}" title="${esc(t('save.newGameHelp'))}">${esc(t(confirming ? 'save.confirmNewGame' : 'save.newGame'))}</button>`;
   }

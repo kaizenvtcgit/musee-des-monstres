@@ -55,10 +55,28 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
   « Individual Characters » des packs [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html)
   et [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html) dans `models/people/men/` et `models/people/women/`.
 
+## Visite 3D
+
+Le bouton « 🚶 Visite 3D » (barre du haut) fait marcher le joueur dans le musée, à la première personne,
+en vraie 3D (three.js, `src/render3d/visit.js`) : le parc est reconstruit à partir de la partie en cours
+(pelouse, allées, sols des enclos, murs avec grilles ou vitres, bâtiments, forêt), et les monstres 3D,
+les visiteurs et les gardiens se déplacent là où le jeu 2D les place. Le jeu continue pendant la visite.
+
+- Z Q S D (ou W A S D) ou flèches : marcher · Maj : courir · souris : regarder (clic pour capturer la souris)
+  · Échap : quitter. Sur écran tactile : pouce gauche pour marcher, pouce droit pour regarder.
+- Ce code et ses fichiers (≈ 15 Mo) ne sont téléchargés qu'au lancement de la visite.
+- `src/assets/3d/*.glb.json` : copies allégées des monstres (`models/*.glb`) et de 5 personnages Quaternius
+  (textures 1024 px en WebP, maillages simplifiés et quantifiés, animations utiles seulement),
+  emballées dans du JSON par `scripts/3d/glb-to-json.mjs` (certains hébergeurs ne servent pas les .glb) ; pas de
+  compression « meshopt » ni Draco : elles demandent du WebAssembly, que certaines pages intégrées interdisent.
+  Pour les refaire : `npx @gltf-transform/cli optimize models/<m>.glb out.glb --texture-compress webp
+  --texture-size 1024 --compress quantize --simplify-ratio 0.5 --simplify-error 0.002`, puis le script ci-dessus.
+- `src/assets/3d/tex/` : textures de sol et de mur (ambientCG, CC0) en 512 px.
+
 ## Crédits
 
 - Décorations d'enclos : modèles 3D de [Poly Haven](https://polyhaven.com) (licence CC0).
-- Sols des enclos : textures photo de [ambientCG](https://ambientcg.com) (Lava003, Tiles093, Ground037, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A — licence CC0).
+- Sols : textures photo de [ambientCG](https://ambientcg.com) (licence CC0) — pelouse Grass004, allées PavingStones070, enclos Lava003, Tiles093, Ground068, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A.
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - `docs/` : document de conception et plan de construction.
 

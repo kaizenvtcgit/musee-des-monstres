@@ -141,8 +141,9 @@ function fpsOf(species, kind) {
 export function preloadSprites(scene) {
   for (const [name, url] of Object.entries(SPRITE_URLS)) scene.load.image(`real-${name}`, url);
   for (const [name, url] of Object.entries(DECOR_URLS)) {
-    // habitat grounds: one sheet of 4 x 4 tiles (128 x 64 px each) per habitat
-    if (name.endsWith('-sheet')) scene.load.spritesheet(`img-${name}`, url, { frameWidth: 128, frameHeight: 64 });
+    // photo grounds (lawn, paths, habitats): one sheet of n x n tiles (128 x 64 px each) per ground;
+    // '-anim': the frames of a looping animated ground (lava, water), 4 blocks of n x n tiles per row
+    if (name.endsWith('-sheet') || name.endsWith('-anim')) scene.load.spritesheet(`img-${name}`, url, { frameWidth: 128, frameHeight: 64 });
     // all the enclosure decorations in one image (scripts/render-model/render-decor.mjs)
     else if (name === 'decor-atlas') scene.load.spritesheet(`img-${name}`, url, { frameWidth: 128, frameHeight: 192 });
     else scene.load.image(`img-${name}`, url);
