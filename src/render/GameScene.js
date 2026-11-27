@@ -175,17 +175,23 @@ export class GameScene extends Phaser.Scene {
       for (let tx = 0; tx < grid.w; tx++) {
         const t = grid.getTile(tx, ty);
         let key = this.grassKey(tx, ty);
+        let frame;
         if (t.ground === 'path') key = tx === this.world.entrance.tx && ty === this.world.entrance.ty ? 'tile-entrance' : 'tile-path';
         const enc = t.occupant && builder.enclosures.get(t.occupant);
         if (enc) {
           // habitat grounds come as 4 x 4 tiles that fit together (scripts/render-model/render-ground.mjs)
-          const part = `tile-${enc.habitat}-${tx % GROUND_BLOCK}-${ty % GROUND_BLOCK}`;
-          key = this.textures.exists(`img-${part}`) ? part : `tile-${enc.habitat}`;
+          // one sheet of GROUND_BLOCK x GROUND_BLOCK tiles per habitat (row = y)
+          const sheet = `img-tile-${enc.habitat}-sheet`;
+          if (this.textures.exists(sheet)) {
+            key = sheet;
+            frame = (ty % GROUND_BLOCK) * GROUND_BLOCK + (tx % GROUND_BLOCK);
+          } else key = `tile-${enc.habitat}`;
         }
         const img = this.tileImages[ty * grid.w + tx];
         const rk = realKey(this, key);
         // real tiles have soft anti-aliased edges: overlap them by a pixel so no seam shows
-        img.setTexture(rk).setDisplaySize(rk === key ? 64 : 66, rk === key ? 32 : 33);
+        const real = rk.startsWith('img-');
+        img.setTexture(rk, frame).setDisplaySize(real ? 66 : 64, real ? 33 : 32);
       }
     }
 

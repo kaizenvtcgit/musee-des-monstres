@@ -1,5 +1,5 @@
 // Renders the ground of the enclosure habitats (scripts/render-model/ground.html) into
-// src/assets/tiles/tile-<habitat>-<x>-<y>.webp (4 x 4 tiles that fit together) and
+// src/assets/tiles/tile-<habitat>-sheet.webp (4 x 4 tiles that fit together, in one image: row = y) and
 // src/assets/tiles/tile-<habitat>.png (one tile, used for the toolbar icons and as a fallback).
 //
 // Usage: node scripts/render-model/render-ground.mjs [habitat...]
@@ -59,8 +59,7 @@ await page.waitForFunction(() => window.ready, null, { timeout: 60000 });
 
 const save = (file, dataUrl) => writeFileSync(path.join(ROOT, 'src/assets/tiles', file), Buffer.from(dataUrl.split(',')[1], 'base64'));
 for (const h of wanted) {
-  const tiles = await page.evaluate((o) => window.renderGround(o), HABITATS[h]);
-  tiles.forEach((row, ty) => row.forEach((url, tx) => save(`tile-${h}-${tx}-${ty}.webp`, url)));
+  save(`tile-${h}-sheet.webp`, await page.evaluate((o) => window.renderGround({ ...o, sheet: true }), HABITATS[h]));
   const [[still]] = await page.evaluate((o) => window.renderGround({ ...o, format: 'image/png' }), HABITATS[h]);
   save(`tile-${h}.png`, still);
   console.log(`${h} done`);

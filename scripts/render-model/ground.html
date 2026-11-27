@@ -163,7 +163,12 @@ out.width = TW; out.height = TH;
 const octx = out.getContext('2d');
 
 // Renders the block for one habitat and returns the N x N tile images (data URLs, row by row: [ty][tx]).
+const sheet = document.createElement('canvas');
+sheet.width = N * TW; sheet.height = N * TH;
+const sctx = sheet.getContext('2d');
+
 window.renderGround = async (opts) => {
+  sctx.clearRect(0, 0, sheet.width, sheet.height);
   ground.material = opts.water ? waterMaterial() : await photoMaterial(opts);
   renderer.render(scene, cam);
   const tiles = [];
@@ -182,10 +187,13 @@ window.renderGround = async (opts) => {
       octx.clip();
       octx.drawImage(renderer.domElement, (cx - TW / 2) * SS, (cy - TH / 2) * SS, TW * SS, TH * SS, 0, 0, TW, TH);
       octx.restore();
-      row.push(out.toDataURL(opts.format ?? 'image/webp', 0.86));
+      if (opts.sheet) sctx.drawImage(out, tx * TW, ty * TH);
+      else row.push(out.toDataURL(opts.format ?? 'image/webp', 0.86));
     }
     tiles.push(row);
   }
+  // sheet: all the tiles in one image (N x N grid, row = ty), one file instead of N x N
+  if (opts.sheet) return sheet.toDataURL('image/webp', 0.86);
   return tiles;
 };
 window.N = N;
