@@ -25,7 +25,7 @@ const HABITATS = {
   // the park itself: lawn and visitor paths
   grass: { id: 'Grass004', block: 8, repeat: 4, tint: 0xdcf0cc, normalScale: 1.2, macro: { amount: 0.2, warm: 0.14, seed: 7 } },
   path: { id: 'PavingStones070', block: 8, repeat: 8, tint: 0xe2dcd0, normalScale: 1.6, macro: { amount: 0.1, warm: 0.15, seed: 23 } },
-  lava: { block: 8, relief: 0.12, id: 'Lava003', repeat: 2, emissive: 0xff5a10, emissiveIntensity: 1.8, normalScale: 1.6, tint: 0xb0a8a4, macro: { amount: 0.14, warm: 0, seed: 18 }, anim: { frames: 16, flow: [0.35, 0.2], pulse: 0.18 } },
+  lava: { block: 8, relief: 0.12, id: 'Lava003', repeat: 2, emissive: 0xff5a10, emissiveIntensity: 1.8, normalScale: 1.6, tint: 0xb0a8a4, macro: { amount: 0.14, warm: 0, seed: 18 }, anim: { frames: 16, heat: [0.35, 1.9], pulse: 0.08 } },
   water: { block: 8, water: true, anim: { frames: 16 } },
   dark: { block: 8, relief: 0.06, id: 'Tiles093', repeat: 4, tint: 0xb6aec4, normalScale: 1.6, macro: { amount: 0.14, warm: 0.1, seed: 25 } },
   forest: { block: 8, relief: 0.2, id: 'Ground068', repeat: 4, tint: 0xd0d8c4, normalScale: 1.4, macro: { amount: 0.14, warm: 0.1, seed: 28 } },

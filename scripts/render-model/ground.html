@@ -328,9 +328,49 @@ window.renderGround = async (opts) => {
   return tiles;
 };
 
+// The emission map of a photo ground (lava) over the whole block, its glow multiplied by travelling
+// waves of heat (periodic noise at time t, so the loop is seamless): brighter and dimmer bands pass
+// through the cracks while the rock does not move.
+let emissionImg = null;
+async function heatMap({ id, repeat, anim }, t) {
+  if (!emissionImg || emissionImg.id !== id) {
+    const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = `/tex/${id}/${id}_1K-JPG_Emission.jpg`; });
+    const S = 2048, cell = S / repeat;
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d');
+    for (let y = 0; y < repeat; y++) for (let x = 0; x < repeat; x++) g.drawImage(img, x * cell, y * cell, cell, cell);
+    emissionImg = { id, data: g.getImageData(0, 0, S, S), S };
+  }
+  const { data, S } = emissionImg;
+  const NS = 128;
+  const a = periodicNoise(NS, 9, 5, t), b = periodicNoise(NS, 14, 41, t);
+  const out = new ImageData(S, S);
+  const d = out.data, src = data.data, k = S / NS;
+  const lo = anim.heat[0], hi = anim.heat[1];
+  for (let y = 0; y < S; y++) {
+    const gy = y / k, y0 = Math.floor(gy), fy = gy - y0, y1 = (y0 + 1) % NS;
+    for (let x = 0; x < S; x++) {
+      const gx = x / k, x0 = Math.floor(gx), fx = gx - x0, x1 = (x0 + 1) % NS;
+      const v = (n) => (n[y0 * NS + x0] * (1 - fx) + n[y0 * NS + x1] * fx) * (1 - fy) + (n[y1 * NS + x0] * (1 - fx) + n[y1 * NS + x1] * fx) * fy;
+      const h = v(a) * 0.6 + v(b) * 0.4;
+      const f = lo + (hi - lo) * h * h;
+      const i = (y * S + x) * 4;
+      d[i] = Math.min(255, src[i] * f); d[i + 1] = Math.min(255, src[i + 1] * f); d[i + 2] = Math.min(255, src[i + 2] * f); d[i + 3] = 255;
+    }
+  }
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  c.getContext('2d').putImageData(out, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 // A looping animation of the ground: `anim.frames` blocks (4 per row) in one image, frame f at column
 // f % 4, row f / 4, each laid out like the sheet. Water: its waves travel (periodic, so the loop is
-// seamless). Photo grounds (lava): the surface creeps along `anim.flow` ([x, y] tiles per loop) with
+// seamless). Lava (`anim.heat`: [dimmest, brightest] glow factor): heatMap above. Other photo grounds: the surface creeps along `anim.flow` ([x, y] tiles per loop) with
 // the flow-map trick: two copies half a loop apart, cross-faded, so it loops without any jump; the glow
 // also breathes (`anim.pulse`).
 const blendA = document.createElement('canvas'), blendB = document.createElement('canvas');
@@ -363,6 +403,18 @@ window.renderGroundAnim = async (opts) => {
       continue;
     }
     mat.emissiveIntensity = glow * (1 + pulse * Math.sin(t * 2 * Math.PI));
+    if (opts.anim.heat) {
+      // the rock stays still (sharp); waves of heat run through its cracks
+      if (mat.emissiveMap) mat.emissiveMap.dispose();
+      mat.emissiveMap = await heatMap(opts, t);
+      const k = (N + 2 * MARGIN) / N;
+      mat.emissiveMap.repeat.set(k, k);
+      mat.emissiveMap.offset.set(-MARGIN / N, -MARGIN / N);
+      mat.needsUpdate = true;
+      renderer.render(scene, cam);
+      cutTiles(renderer.domElement, actx, ox, oy);
+      continue;
+    }
     const wA = 1 - Math.abs(2 * t - 1); // copy A is invisible when it jumps back (t = 0)
     shot(t, blendA);
     shot((t + 0.5) % 1, blendB); // copy B jumps at t = 0.5, when A is fully shown
