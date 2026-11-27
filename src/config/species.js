@@ -11,6 +11,10 @@ export const HABITAT_FAMILY = {
   ice: 'ice', tundra: 'ice', summit: 'ice',
 };
 export const HABITAT_FAMILIES = ['lava', 'water', 'dark', 'forest', 'ice'];
+// Habitats the player can build. The others are ready (grounds, decorations, rules) but switched off for now:
+// add them here to offer them again. Enclosures of a hidden habitat in a saved game keep working.
+export const OFFERED_HABITATS = ['lava', 'water', 'dark', 'forest', 'ice'];
+export const offeredHabitatsOfFamily = (family) => habitatsOfFamily(family).filter((h) => OFFERED_HABITATS.includes(h));
 export const habitatsOfFamily = (family) => HABITATS.filter((h) => HABITAT_FAMILY[h] === family);
 // How much more the visitors like a monster shown in this habitat (the rarer ones impress more).
 export const HABITAT_APPEAL = { ash: 1.05, basalt: 1.1, reef: 1.1, abyss: 1.2, swamp: 1.05, graveyard: 1.1, ruins: 1.1, crystal: 1.2, tundra: 1.05, summit: 1.1 };

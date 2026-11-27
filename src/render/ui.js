@@ -1,7 +1,7 @@
 import './ui.css';
 import { t } from '../i18n/index.js';
 import { BALANCE } from '../config/balance.js';
-import { SPECIES, LOCATIONS, HABITATS, HABITAT_FAMILIES, habitatsOfFamily } from '../config/species.js';
+import { SPECIES, LOCATIONS, HABITAT_FAMILIES, offeredHabitatsOfFamily } from '../config/species.js';
 import { ENCLOSURE_DECOR, decorForHabitat } from '../config/decor.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { resolveMonsterTexture, realKey, visitorLook } from './sprites.js';
@@ -74,7 +74,7 @@ class UI {
     this.renderToolbar();
     // habitats grouped by the monster that lives there
     this.el('habitats').innerHTML = HABITAT_FAMILIES.map((f) => `<div class="group"><h4>${esc(this.familySpecies(f))}</h4>
-      ${habitatsOfFamily(f).map((h) => `<button data-habitat="${h}"><img src="${this.img(`tile-${h}`)}" width="40"><small>${esc(t(`habitat.${h}`))}</small></button>`).join('')}</div>`).join('');
+      ${offeredHabitatsOfFamily(f).map((h) => `<button data-habitat="${h}"><img src="${this.img(`tile-${h}`)}" width="40"><small>${esc(t(`habitat.${h}`))}</small></button>`).join('')}</div>`).join('');
     this.renderDecorPicker();
     this.setTool({ type: 'select' });
     this.refresh(true);
@@ -168,14 +168,14 @@ class UI {
         <div class="group"><h4>${esc(t('decor.garden'))}</h4>
           <button data-garden title="${esc(t('decor.gardenHelp'))}"><img src="${this.img('decoration')}"><small>${esc(t('decor.garden'))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.decorationCost }))}</small></button>
         </div>
-        ${habitatsOfFamily(this.decorFamily).map((h) => `<div class="group"><h4>${esc(t(`habitat.${h}`))}</h4>${decorForHabitat(h).map((d) => item(d.id)).join('')}</div>`).join('')}
+        ${offeredHabitatsOfFamily(this.decorFamily).map((h) => `<div class="group"><h4>${esc(t(`habitat.${h}`))}</h4>${decorForHabitat(h).map((d) => item(d.id)).join('')}</div>`).join('')}
       </div>`;
   }
 
   // "Lave, Champ de cendres ou Canyon de basalte": the habitats of a family.
   habitatNames(family) {
-    const names = habitatsOfFamily(family).map((h) => t(`habitat.${h}`));
-    return `${names.slice(0, -1).join(', ')} ${t('habitat.or')} ${names.at(-1)}`;
+    const names = offeredHabitatsOfFamily(family).map((h) => t(`habitat.${h}`));
+    return names.length > 1 ? `${names.slice(0, -1).join(', ')} ${t('habitat.or')} ${names.at(-1)}` : names[0];
   }
 
   // Name of the monster living in a habitat family ("Dragonnet" for lava).
