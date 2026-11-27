@@ -181,13 +181,6 @@ export function generateTextures(scene) {
       g.fillEllipse(32, 12, 10 * i, 4 * i);
     }
   });
-  // rings on the water around a swimming monster (64 x 32)
-  tex(scene, 'ripple', 64, 32, (g) => {
-    for (const [w, h, alpha] of [[60, 28, 0.22], [46, 20, 0.3], [32, 13, 0.18]]) {
-      g.lineStyle(1.5, 0xffffff, alpha);
-      g.strokeEllipse(32, 16, w, h);
-    }
-  });
   tex(scene, 'tile-entrance', 64, 32, (g) => {
     diamond(g, 0xffd166, 0xbc8a5f);
   });

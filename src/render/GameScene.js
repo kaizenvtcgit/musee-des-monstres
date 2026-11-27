@@ -381,14 +381,9 @@ export class GameScene extends Phaser.Scene {
       let shadow = [0.7, 0.7];
       if (look.directional) shadow = [1.3, 1.0];
       else if (look.real) shadow = [(entry.sprite.displayWidth / 64) * 0.9, 0.9];
-      if (swimming) {
-        // rings on the water around a swimming monster instead of a shadow
-        const r = 1 + 0.06 * Math.sin(time * 0.004 + entry.phase);
-        entry.shadow.setTexture('ripple').setPosition(p.x, p.y).setDepth(p.y + 0.5).setScale(1.25 * r, 1.25 * r);
-      } else {
-        if (entry.shadow.texture.key !== 'shadow') entry.shadow.setTexture('shadow');
-        entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
-      }
+      // no shadow on the water under a swimming monster
+      entry.shadow.setVisible(!swimming);
+      entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
       const top = look.directional ? entry.sprite.displayHeight * directionalOriginY(anim) : entry.sprite.displayHeight;
       this.setBubble(entry, m.state === 'escaped' ? 'bubble-scared' : null, p, top - 10);
     }
