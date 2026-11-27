@@ -1,4 +1,4 @@
-// Renders the ground of the enclosure habitats (scripts/render-model/ground.html) into
+// Renders the lawn, the paths and the ground of the enclosure habitats (scripts/render-model/ground.html) into
 // src/assets/tiles/tile-<habitat>-sheet.webp (4 x 4 tiles that fit together, in one image: row = y) and
 // src/assets/tiles/tile-<habitat>.png (one tile, used for the toolbar icons and as a fallback).
 //
@@ -16,8 +16,13 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const TEX = path.join(ROOT, 'models/textures');
 
-// repeat: copies of the texture over a block of 4 x 4 tiles (bigger = smaller details).
+// repeat: copies of the texture over a block of tiles (bigger = smaller details); block: tiles per side
+// of the block (4 by default; 8 for the lawn and the paths, seen everywhere, so they repeat less);
+// macro: big soft light / dark patches baked over the block (see ground.html).
 const HABITATS = {
+  // the park itself: lawn and visitor paths
+  grass: { id: 'Grass004', block: 8, repeat: 4, tint: 0xdcf0cc, normalScale: 1.2, macro: { amount: 0.2, warm: 0.14, seed: 7 } },
+  path: { id: 'PavingStones070', block: 8, repeat: 8, tint: 0xe2dcd0, normalScale: 1.6, macro: { amount: 0.1, warm: 0.15, seed: 23 } },
   lava: { id: 'Lava003', repeat: 1, emissive: 0xff5a10, emissiveIntensity: 1.8, normalScale: 1.6, tint: 0xb0a8a4 },
   water: { water: true },
   dark: { id: 'Tiles093', repeat: 2, tint: 0xb6aec4, normalScale: 1.6 },

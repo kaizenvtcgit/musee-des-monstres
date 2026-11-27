@@ -29,8 +29,6 @@ const SHELTER_RADIUS = 0.8;
 const SHELTER_ENTRANCE = 1.15;
 // Colour of the eyes glowing in the dark of a shelter.
 const EYES = { dragonnet: 0xffa040, kraken: 0xfff070, spectre: 0x9fe6ff, golem: 0xffc850, yeti: 0x8fd0ff };
-// Habitat grounds repeat every GROUND_BLOCK tiles.
-const GROUND_BLOCK = 4;
 // Display scale of the 3D people (128 px frames) and how long a happy visitor waves (game seconds).
 const PERSON_SCALE = 0.5;
 const WAVE_SECONDS = 2.1;
@@ -105,8 +103,9 @@ export class GameScene extends Phaser.Scene {
       for (let tx = -RING; tx < grid.w + RING; tx++) {
         if (grid.inBounds(tx, ty)) continue;
         const p = tileToScreen(tx, ty);
-        const key = realKey(this, this.grassKey(tx, ty));
-        this.add.image(p.x, p.y, key).setDisplaySize(66, 33).setDepth(GROUND_DEPTH);
+        const sheet = this.groundTile('grass', tx, ty);
+        if (sheet) this.add.image(p.x, p.y, sheet.key, sheet.frame).setDisplaySize(66, 33).setDepth(GROUND_DEPTH);
+        else this.add.image(p.x, p.y, realKey(this, this.grassKey(tx, ty))).setDisplaySize(66, 33).setDepth(GROUND_DEPTH);
         this.addGrassDetail(tx, ty, null);
       }
     }
@@ -139,6 +138,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   // One of the realistic grass variants (procedural fallback when renders are missing).
+  // A tile of a photo-realistic ground sheet (scripts/render-model/render-ground.mjs): the sheet holds a
+  // block of n x n tiles that fit together (row = y), the map picks tile (tx mod n, ty mod n).
+  // null when the sheet is not there (then the older single tiles are used).
+  groundTile(name, tx, ty) {
+    const key = `img-tile-${name}-sheet`;
+    if (!this.textures.exists(key)) return null;
+    const n = Math.round(Math.sqrt(this.textures.get(key).frameTotal - 1)); // frameTotal counts __BASE
+    return { key, frame: (ty % n) * n + (tx % n) };
+  }
+
   grassKey(tx, ty) {
     if (!this.grassVariants) {
       this.grassVariants = ['tile-grass', 'tile-grass2', 'tile-grass3', 'tile-grass4'].filter((k) => this.textures.exists(`img-${k}`));
@@ -190,18 +199,20 @@ export class GameScene extends Phaser.Scene {
       for (let tx = 0; tx < grid.w; tx++) {
         const t = grid.getTile(tx, ty);
         let key = this.grassKey(tx, ty);
-        let frame;
-        if (t.ground === 'path') key = tx === this.world.entrance.tx && ty === this.world.entrance.ty ? 'tile-entrance' : 'tile-path';
+        let name = 'grass';
         const enc = t.occupant && builder.enclosures.get(t.occupant);
-        if (enc) {
-          // habitat grounds come as 4 x 4 tiles that fit together (scripts/render-model/render-ground.mjs)
-          // one sheet of GROUND_BLOCK x GROUND_BLOCK tiles per habitat (row = y)
-          const sheet = `img-tile-${enc.habitat}-sheet`;
-          if (this.textures.exists(sheet)) {
-            key = sheet;
-            frame = (ty % GROUND_BLOCK) * GROUND_BLOCK + (tx % GROUND_BLOCK);
-          } else key = `tile-${enc.habitat}`;
+        if (t.ground === 'path') {
+          const gate = tx === this.world.entrance.tx && ty === this.world.entrance.ty;
+          key = gate ? 'tile-entrance' : 'tile-path';
+          name = 'path'; // the gate tile too, when the paved sheet is there
         }
+        if (enc) {
+          key = `tile-${enc.habitat}`;
+          name = enc.habitat;
+        }
+        const sheet = name && this.groundTile(name, tx, ty);
+        let frame;
+        if (sheet) ({ key, frame } = sheet);
         const img = this.tileImages[ty * grid.w + tx];
         const rk = realKey(this, key);
         // real tiles have soft anti-aliased edges: overlap them by a pixel so no seam shows

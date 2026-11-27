@@ -141,7 +141,7 @@ function fpsOf(species, kind) {
 export function preloadSprites(scene) {
   for (const [name, url] of Object.entries(SPRITE_URLS)) scene.load.image(`real-${name}`, url);
   for (const [name, url] of Object.entries(DECOR_URLS)) {
-    // habitat grounds: one sheet of 4 x 4 tiles (128 x 64 px each) per habitat
+    // photo grounds (lawn, paths, habitats): one sheet of n x n tiles (128 x 64 px each) per ground
     if (name.endsWith('-sheet')) scene.load.spritesheet(`img-${name}`, url, { frameWidth: 128, frameHeight: 64 });
     // all the enclosure decorations in one image (scripts/render-model/render-decor.mjs)
     else if (name === 'decor-atlas') scene.load.spritesheet(`img-${name}`, url, { frameWidth: 128, frameHeight: 192 });
