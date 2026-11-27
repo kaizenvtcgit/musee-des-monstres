@@ -85,3 +85,10 @@ describe('enclosure decorations', () => {
     expect([...loaded.builder.enclosures.values()][0].decor.map((d) => d.type)).toEqual(['fern']);
   });
 });
+
+describe('low decorations', () => {
+  it('the small plants and logs can be walked over, the big pieces cannot', () => {
+    const low = Object.values(ENCLOSURE_DECOR).filter((d) => d.low).map((d) => d.id).sort();
+    expect(low).toEqual(['deadTrunk', 'fern', 'glowMushrooms', 'mossStump', 'reeds']);
+  });
+});

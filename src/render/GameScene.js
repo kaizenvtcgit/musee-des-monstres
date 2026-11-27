@@ -9,6 +9,7 @@ import {
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { MonsterFX } from './monsterfx.js';
 import { Sounds } from './sound.js';
+import { ENCLOSURE_DECOR } from '../config/decor.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
 // Enclosure decoration images (scripts/render-model/decor.html): size, ground row, number of variants;
@@ -297,8 +298,10 @@ export class GameScene extends Phaser.Scene {
         const key = `img-decor-${d.type}-${v}`;
         if (!this.textures.exists(key)) continue;
         const c = tileToScreen(d.tx, d.ty);
+        // a low decoration stays under a monster walking over it
+        const depth = ENCLOSURE_DECOR[d.type]?.low ? c.y - 14 : c.y;
         this.decorSprites.push(this.add.image(c.x, c.y, key)
-          .setOrigin(0.5, DECOR_IMG.groundY / DECOR_IMG.h).setDisplaySize(DECOR_IMG.w / 2, DECOR_IMG.h / 2).setDepth(c.y));
+          .setOrigin(0.5, DECOR_IMG.groundY / DECOR_IMG.h).setDisplaySize(DECOR_IMG.w / 2, DECOR_IMG.h / 2).setDepth(depth));
         if (d.type === 'fumarole') {
           this.decorSmoke.push(this.add.particles(c.x, c.y - 10, 'fx-mist', {
             frequency: 380, lifespan: { min: 2200, max: 3200 }, quantity: 1,
@@ -322,8 +325,8 @@ export class GameScene extends Phaser.Scene {
       const o = this.entitySprites.get(id);
       if (o && o.w && o.wEnc === e.id) others.push(o.w);
     }
-    // decorations are obstacles too
-    for (const d of e.decor ?? []) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
+    // big decorations are obstacles too (the low ones are walked over)
+    for (const d of e.decor ?? []) if (!ENCLOSURE_DECOR[d.type]?.low) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     if (!entry.w || entry.wEnc !== e.id) {
       entry.wEnc = e.id;
       const fx = monsterFx(m.speciesId);
