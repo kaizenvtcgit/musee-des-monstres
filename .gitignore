@@ -6,3 +6,5 @@ dist
 models/people/
 # photo textures from ambientCG, downloaded by scripts/render-model/render-ground.mjs
 models/textures/
+# Poly Haven models of the enclosure decorations, downloaded by scripts/render-model/render-decor.mjs
+models/decor/

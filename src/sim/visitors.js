@@ -1,6 +1,6 @@
 import { BALANCE } from '../config/balance.js';
 import { findPath } from './pathfinding.js';
-import { appeal } from './monsters.js';
+import { appeal, decorCount } from './monsters.js';
 
 const WALK_SPEED = 1.5;
 const FLEE_SPEED = 3;
@@ -112,14 +112,14 @@ function exitTarget(ctx) {
   return { kind: 'exit', tile: { ...ctx.entrance } };
 }
 
-// Sum of the appeal of the monsters on show in the enclosure, or null if none is there.
+// Sum of the appeal of the monsters on show in the enclosure (more with decorations), or null if none is there.
 function enclosureAppeal(e, ctx) {
   let total = null;
   for (const id of e.monsterIds) {
     const m = ctx.monsters.get(id);
     if (m && m.state === 'enclosed') total = (total || 0) + appeal(m);
   }
-  return total;
+  return total === null ? null : total * (1 + decorCount(e) * BALANCE.decorAppeal);
 }
 
 function chooseTarget(v, ctx) {
@@ -240,7 +240,7 @@ function arrive(v, ctx) {
     if (total !== null) {
       v.satisfaction = Math.min(1, v.satisfaction + total / 50);
       v.state = 'watching';
-      v.timer = WATCH_SEC;
+      v.timer = WATCH_SEC * (1 + decorCount(e) * BALANCE.decorWatch);
     } else {
       v.target = null;
     }

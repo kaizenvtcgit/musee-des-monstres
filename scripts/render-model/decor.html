@@ -1,0 +1,357 @@
+<!doctype html>
+<html>
+<body style="margin:0">
+<script type="importmap">
+  { "imports": { "three": "/three/build/three.module.js", "three/addons/": "/three/examples/jsm/" } }
+</script>
+<script type="module">
+// Renders the enclosure decorations (photo-scanned Poly Haven models or objects built here) in the game's
+// isometric view, one still image per variant (driven by render-decor.mjs).
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// Output: W x H px; the centre of the tile, on the ground, at (W / 2, GROUND_Y). Shown at half size in the game.
+const W = 128, H = 192, GROUND_Y = 150;
+const SS = 2;
+const PX_PER_UNIT = 64 / Math.SQRT1_2; // one tile = 1 unit = 128 px across (2:1 isometric)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setSize(W * SS, H * SS);
+renderer.setClearColor(0, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const hemi = new THREE.HemisphereLight(0xffffff, 0x6a6458, 1.5);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.4);
+sun.position.set(-4, 8, 3); // from the upper left, like the other renders
+scene.add(sun);
+
+// sky reflections (ice, water, glossy things)
+const sky = (() => {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 32;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 32);
+  grad.addColorStop(0, '#9ec9f0'); grad.addColorStop(0.5, '#eef5fb'); grad.addColorStop(1, '#6d7f6a');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 32);
+  const t = new THREE.CanvasTexture(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.PMREMGenerator(renderer).fromEquirectangular(t).texture;
+})();
+scene.environment = sky;
+scene.environmentIntensity = 0.35;
+
+const cam = new THREE.OrthographicCamera(
+  -(W / 2) / PX_PER_UNIT, (W / 2) / PX_PER_UNIT, (H / 2) / PX_PER_UNIT, -(H / 2) / PX_PER_UNIT, 0.01, 100,
+);
+const el = THREE.MathUtils.degToRad(30), az = THREE.MathUtils.degToRad(45);
+cam.position.set(Math.sin(az) * Math.cos(el) * 20, Math.sin(el) * 20, Math.cos(az) * Math.cos(el) * 20);
+cam.lookAt(0, 0, 0);
+cam.updateMatrixWorld();
+cam.position.addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion), (GROUND_Y - H / 2) / PX_PER_UNIT);
+
+const holder = new THREE.Group();
+scene.add(holder);
+
+// ---- material tweaks ----------------------------------------------------------------------------
+
+// Glowing lava in the dark creases of a rock texture (and a little at its foot).
+function lavaGlow(mat, strength) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.lavaStrength = { value: strength };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vHeight;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvHeight = (modelMatrix * vec4(transformed, 1.0)).y;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float lavaStrength;\nvarying float vHeight;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        #ifdef USE_MAP
+          float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          float crease = smoothstep(0.16, 0.04, lum); // only the darkest cracks
+        #else
+          float crease = 0.0;
+        #endif
+        float foot = clamp(1.0 - vHeight / 0.035, 0.0, 1.0);
+        totalEmissiveRadiance += vec3(1.0, 0.32, 0.05) * (crease + foot * 0.8) * lavaStrength;`);
+  };
+}
+
+// Snow on every surface facing the sky.
+function snowCap(mat, amount) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.snowAmount = { value: amount };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vUp;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float snowAmount;\nvarying float vUp;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float snow = smoothstep(0.55 - snowAmount * 0.35, 0.8 - snowAmount * 0.3, vUp);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 1.0), snow);`);
+  };
+}
+
+// ---- objects built here -----------------------------------------------------------------------
+
+let seed = 1;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+function crystals() {
+  seed = 7;
+  const g = new THREE.Group();
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x16131a, roughness: 0.08, metalness: 0.35, emissive: 0x200800, envMapIntensity: 1.4,
+  });
+  for (let i = 0; i < 7; i++) {
+    const h = 0.25 + rnd() * 0.45, r = 0.05 + rnd() * 0.05;
+    const shard = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.1, h, 6), glass);
+    body.position.y = h / 2;
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(r, r * 2.2, 6), glass);
+    tip.position.y = h + r * 1.1;
+    shard.add(body, tip);
+    const a = rnd() * Math.PI * 2, d = i === 0 ? 0 : 0.08 + rnd() * 0.14;
+    shard.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
+    shard.rotation.set((rnd() - 0.5) * 0.7, rnd() * 6, (rnd() - 0.5) * 0.7);
+    g.add(shard);
+  }
+  // molten glow at the foot
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24), new THREE.MeshBasicMaterial({ color: 0xff7a26 }));
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.y = 0.005;
+  pool.userData.glow = true;
+  g.add(pool);
+  return g;
+}
+
+function reeds() {
+  seed = 11;
+  const g = new THREE.Group();
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x6f8a3a, roughness: 0.8, side: THREE.DoubleSide });
+  const dry = new THREE.MeshStandardMaterial({ color: 0x9c8a52, roughness: 0.85, side: THREE.DoubleSide });
+  const head = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.9 });
+  for (let i = 0; i < 34; i++) {
+    const h = 0.35 + rnd() * 0.5;
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.012, h, 4), rnd() < 0.25 ? dry : leaf);
+    const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 0.3;
+    blade.position.set(Math.cos(a) * d, h / 2 - 0.02, Math.sin(a) * d);
+    blade.rotation.set((rnd() - 0.5) * 0.35, 0, (rnd() - 0.5) * 0.35);
+    g.add(blade);
+    if (rnd() < 0.2) {
+      const cat = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.09, 8), head);
+      cat.position.set(0, h * 0.42, 0);
+      blade.add(cat);
+    }
+  }
+  return g;
+}
+
+function mushrooms() {
+  seed = 5;
+  const g = new THREE.Group();
+  const stem = new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.7 });
+  const colors = [0x5fe0ff, 0x9a7dff, 0x5fe0ff, 0x7dffd0, 0x9a7dff, 0x5fe0ff];
+  for (let i = 0; i < 6; i++) {
+    const s = 0.5 + rnd() * 0.8;
+    const m = new THREE.Group();
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.022 * s, 0.03 * s, 0.2 * s, 10), stem);
+    st.position.y = 0.1 * s;
+    const capMat = new THREE.MeshStandardMaterial({
+      color: colors[i], emissive: colors[i], emissiveIntensity: 1.3, roughness: 0.4,
+    });
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.08 * s, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), capMat);
+    cap.scale.y = 0.6;
+    cap.position.y = 0.2 * s;
+    cap.userData.glow = true;
+    m.add(st, cap);
+    const a = rnd() * Math.PI * 2, d = i === 0 ? 0 : 0.08 + rnd() * 0.18;
+    m.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
+    m.rotation.set((rnd() - 0.5) * 0.3, 0, (rnd() - 0.5) * 0.3);
+    g.add(m);
+  }
+  return g;
+}
+
+function iceBlock() {
+  seed = 3;
+  const geo = new THREE.IcosahedronGeometry(0.3, 1);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const k = 0.8 + rnd() * 0.35;
+    p.setXYZ(i, p.getX(i) * k * 1.15, Math.max(0, p.getY(i) * k * 1.4 + 0.22), p.getZ(i) * k);
+  }
+  geo.computeVertexNormals();
+  const ice = new THREE.MeshStandardMaterial({
+    color: 0xbfe6f7, roughness: 0.06, metalness: 0.05, transparent: true, opacity: 0.82, envMapIntensity: 2,
+    flatShading: true,
+  });
+  const block = new THREE.Mesh(geo, ice);
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 0), new THREE.MeshStandardMaterial({ color: 0xf2fbff, roughness: 0.5 }));
+  core.position.y = 0.24;
+  core.scale.set(1.1, 1.3, 0.9);
+  const g = new THREE.Group();
+  g.add(core, block);
+  return g;
+}
+
+function fir() {
+  seed = 9;
+  const g = new THREE.Group();
+  const needles = new THREE.MeshStandardMaterial({ color: 0x1f3a26, roughness: 0.9, flatShading: true });
+  const bark = new THREE.MeshStandardMaterial({ color: 0x4a3426, roughness: 1 });
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.3, 8), bark);
+  trunk.position.y = 0.15;
+  g.add(trunk);
+  const layers = 6;
+  for (let i = 0; i < layers; i++) {
+    const t = i / (layers - 1);
+    const r = 0.3 * (1 - t * 0.8), h = 0.4 * (1 - t * 0.35);
+    const geo = new THREE.ConeGeometry(r, h, 14, 2);
+    const p = geo.attributes.position;
+    for (let k = 0; k < p.count; k++) {
+      const y = p.getY(k);
+      if (y < h / 2 - 0.001) {
+        const j = 1 + (rnd() - 0.5) * 0.35;
+        p.setXYZ(k, p.getX(k) * j, y - rnd() * 0.04, p.getZ(k) * j);
+      }
+    }
+    geo.computeVertexNormals();
+    const cone = new THREE.Mesh(geo, needles);
+    cone.position.y = 0.18 + t * 0.78 + h / 2;
+    cone.rotation.y = rnd() * 6;
+    g.add(cone);
+  }
+  return g;
+}
+
+const BUILT = { crystals, reeds, mushrooms, iceBlock, fir };
+
+// ---- loading and placing ----------------------------------------------------------------------
+
+const loader = new GLTFLoader();
+
+// opts: { model: url | built: name, size (max footprint in tiles) | height (in tiles), tint, lava, snow, glow,
+//         waterline (tiles above the bottom that are under water) }
+async function build(opts) {
+  let obj;
+  if (opts.built) obj = BUILT[opts.built]();
+  else obj = (await loader.loadAsync(opts.model)).scene;
+  if (opts.largest) {
+    obj.updateMatrixWorld(true);
+    const meshes = [];
+    obj.traverse((m) => { if (m.isMesh) meshes.push(m); });
+    const vol = (m) => { const s = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3()); return s.x * s.y * s.z; };
+    meshes.sort((a, b) => vol(b) - vol(a)).slice(opts.largest).forEach((m) => m.removeFromParent());
+  }
+  if (opts.light) {
+    // lit from inside: the parts whose material name contains `lightOn` (a lantern's glass) glow warmly
+    obj.traverse((m) => {
+      if (!m.isMesh || !m.material.name.includes(opts.lightOn)) return;
+      m.material = m.material.clone();
+      m.material.emissive = new THREE.Color(opts.light);
+      m.material.emissiveIntensity = 1.4;
+      m.material.opacity = Math.max(m.material.opacity, 0.85);
+      m.userData.glow = true;
+    });
+  }
+  // normalise: centred on the tile, resting on the ground, scaled to the wanted size
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const k = opts.height ? opts.height / size.y : (opts.size ?? 0.8) / Math.max(size.x, size.z);
+  const wrap = new THREE.Group();
+  obj.position.sub(new THREE.Vector3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2));
+  wrap.add(obj);
+  wrap.scale.setScalar(k);
+  obj.traverse((m) => {
+    if (!m.isMesh) return;
+    m.material = m.material.clone();
+    if (opts.tint) m.material.color.multiply(new THREE.Color(opts.tint));
+    if (opts.lava) lavaGlow(m.material, opts.lava);
+    if (opts.snow) snowCap(m.material, opts.snow);
+  });
+  return wrap;
+}
+
+const out = document.createElement('canvas');
+const tmp = document.createElement('canvas');
+const glowC = document.createElement('canvas');
+
+function renderTo(ctx) {
+  renderer.render(scene, cam);
+  ctx.drawImage(renderer.domElement, 0, 0, W, H);
+}
+
+// Glow around the emissive parts: render them alone, blur, add on top.
+function addGlow(ctx, obj, strength) {
+  const saved = [];
+  obj.traverse((m) => {
+    if (!m.isMesh) return;
+    saved.push([m, m.material]);
+    const lit = m.userData.glow || (m.material.emissive && m.material.emissive.getHex() && m.material.emissiveIntensity > 0.5);
+    // only the glowing parts are drawn, so the light shines through the frame of a lantern
+    m.material = new THREE.MeshBasicMaterial({ color: lit ? (m.material.emissive?.getHex() || m.material.color.getHex()) : 0, visible: !!lit });
+  });
+  const env = scene.environment;
+  scene.environment = null;
+  renderer.render(scene, cam);
+  scene.environment = env;
+  saved.forEach(([m, mat]) => { m.material.dispose(); m.material = mat; });
+  glowC.width = W; glowC.height = H;
+  const g = glowC.getContext('2d', { willReadFrequently: true });
+  g.drawImage(renderer.domElement, 0, 0, W, H);
+  const img = g.getImageData(0, 0, W, H);
+  for (let i = 0; i < img.data.length; i += 4) img.data[i + 3] = Math.max(img.data[i], img.data[i + 1], img.data[i + 2]);
+  g.putImageData(img, 0, 0);
+  tmp.width = W; tmp.height = H;
+  const t = tmp.getContext('2d');
+  t.filter = 'blur(5px)';
+  t.drawImage(glowC, 0, 0);
+  t.filter = 'none';
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = strength;
+  ctx.drawImage(tmp, 0, 0);
+  ctx.restore();
+}
+
+// Renders one decoration turned by `turn` degrees; returns a PNG data URL.
+window.renderDecor = async (opts, turn) => {
+  holder.clear();
+  const obj = await build(opts);
+  obj.rotation.y = THREE.MathUtils.degToRad(turn);
+  holder.add(obj);
+  holder.updateMatrixWorld(true);
+  out.width = W; out.height = H;
+  const ctx = out.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  if (opts.waterline !== undefined) {
+    // the object sits lower, its waterline at the ground of the tile; under the surface it is faint and
+    // tinted like the water, above it is drawn normally
+    holder.position.y = -opts.waterline;
+    holder.updateMatrixWorld(true);
+    renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), 0)];
+    tmp.width = W; tmp.height = H;
+    const t = tmp.getContext('2d');
+    renderTo(t);
+    t.globalCompositeOperation = 'source-atop';
+    t.fillStyle = 'rgba(20, 90, 105, 0.55)';
+    t.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(tmp, 0, 0);
+    ctx.globalAlpha = 1;
+    renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];
+    renderTo(ctx);
+    renderer.clippingPlanes = [];
+    holder.position.y = 0;
+  } else {
+    renderTo(ctx);
+  }
+  if (opts.glow) addGlow(ctx, obj, opts.glow);
+  return out.toDataURL('image/png');
+};
+window.ready = true;
+</script>
+</body>
+</html>

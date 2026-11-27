@@ -23,12 +23,18 @@ export function createMonster(speciesId, { rare = false } = {}) {
   };
 }
 
+// Decorations of an enclosure that count for its bonuses (the first BALANCE.decorMaxCount).
+export function decorCount(enclosure) {
+  return Math.min(enclosure?.decor?.length ?? 0, BALANCE.decorMaxCount);
+}
+
 export function targetHappiness(monster, enclosure, watchers) {
   const sp = SPECIES[monster.speciesId];
   const habitatFactor = enclosure.habitat === sp.habitat ? 1 : 0.3;
   const count = Math.max(1, enclosure.monsterIds ? enclosure.monsterIds.length : 1);
   const sizeFactor = Math.min(1, enclosure.area / (sp.minArea * count));
-  return clamp(100 * habitatFactor * sizeFactor - monster.hunger * 0.5, 0, 100);
+  const decor = decorCount(enclosure) * BALANCE.decorHappiness;
+  return clamp(100 * habitatFactor * sizeFactor + decor - monster.hunger * 0.5, 0, 100);
 }
 
 export function updateMonster(monster, enclosure, watchers, dt) {

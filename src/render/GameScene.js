@@ -10,6 +10,11 @@ import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { MonsterFX } from './monsterfx.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
+// Enclosure decoration images (scripts/render-model/decor.html): size, ground row, number of variants;
+// DECOR_RADIUS: room they take for the monsters walking around them (tile units).
+const DECOR_IMG = { w: 128, h: 192, groundY: 150 };
+const DECOR_VARIANTS = 2;
+const DECOR_RADIUS = 0.32;
 // Habitat grounds repeat every GROUND_BLOCK tiles.
 const GROUND_BLOCK = 4;
 // Display scale of the 3D people (128 px frames) and how long a happy visitor waves (game seconds).
@@ -198,6 +203,7 @@ export class GameScene extends Phaser.Scene {
     this.fences.clear();
     for (const s of this.fenceSprites) s.destroy();
     this.fenceSprites = [];
+    this.drawDecor();
     const realFence = this.textures.exists('img-prop-fenceX') && this.textures.exists('img-prop-fenceY');
     const f = this.fences;
     for (const e of builder.enclosures.values()) {
@@ -270,6 +276,33 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // Decorations inside the enclosures (src/config/decor.js), redrawn with the ground; fumaroles smoke.
+  drawDecor() {
+    for (const s of this.decorSprites ?? []) s.destroy();
+    for (const e of this.decorSmoke ?? []) e.destroy();
+    this.decorSprites = [];
+    this.decorSmoke = [];
+    for (const e of this.world.builder.enclosures.values()) {
+      for (const d of e.decor ?? []) {
+        // the variant (turned differently) is picked from the tile, so it never changes
+        const v = (d.tx * 7 + d.ty * 13) % DECOR_VARIANTS;
+        const key = `img-decor-${d.type}-${v}`;
+        if (!this.textures.exists(key)) continue;
+        const c = tileToScreen(d.tx, d.ty);
+        this.decorSprites.push(this.add.image(c.x, c.y, key)
+          .setOrigin(0.5, DECOR_IMG.groundY / DECOR_IMG.h).setDisplaySize(DECOR_IMG.w / 2, DECOR_IMG.h / 2).setDepth(c.y));
+        if (d.type === 'fumarole') {
+          this.decorSmoke.push(this.add.particles(c.x, c.y - 10, 'fx-mist', {
+            frequency: 380, lifespan: { min: 2200, max: 3200 }, quantity: 1,
+            x: { min: -6, max: 6 }, speedX: { min: -3, max: 5 }, speedY: { min: -16, max: -8 },
+            scale: { start: 0.35, end: 1.5 }, alpha: { start: 0.32, end: 0 }, tint: [0x8d8782, 0x6f6a66, 0xa49c94],
+            maxAliveParticles: 9,
+          }).setDepth(c.y + 1));
+        }
+      }
+    }
+  }
+
   // Visual-only stroll of an enclosed monster (src/render/wander.js): walk to a free spot,
   // rest, repeat, never through another monster of the same enclosure. Returns the drawn position.
   wanderInEnclosure(m, entry, e, dt) {
@@ -281,6 +314,8 @@ export class GameScene extends Phaser.Scene {
       const o = this.entitySprites.get(id);
       if (o && o.w && o.wEnc === e.id) others.push(o.w);
     }
+    // decorations are obstacles too
+    for (const d of e.decor ?? []) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     if (!entry.w || entry.wEnc !== e.id) {
       entry.wEnc = e.id;
       entry.w = createWanderer(findFreeSpot(bounds, others, r, Math.random), r);
@@ -318,6 +353,7 @@ export class GameScene extends Phaser.Scene {
 
   syncEntities(time, dt = 0) {
     const { world } = this;
+    for (const e of this.decorSmoke ?? []) e.timeScale = world.speed || 0.0001; // smoke follows the game speed
     const alive = new Set();
 
     for (const m of world.monsters.values()) {
@@ -588,6 +624,9 @@ export class GameScene extends Phaser.Scene {
         this.dragStart = null;
         break;
       }
+      case 'decor':
+        this.report(b.placeDecor(tile.tx, tile.ty, this.tool.decor));
+        break;
       case 'decoration':
       case 'snack':
       case 'souvenir':
@@ -693,6 +732,12 @@ export class GameScene extends Phaser.Scene {
       const t = grid.getTile(tile.tx, tile.ty);
       diamondAt(tile.tx, tile.ty, false);
       if (!t.occupant && t.ground !== 'path') g.clear();
+      return;
+    }
+    if (type === 'decor') {
+      const t = grid.getTile(tile.tx, tile.ty);
+      const enc = t.occupant && this.world.builder.enclosures.get(t.occupant);
+      diamondAt(tile.tx, tile.ty, !!enc && enc.habitat === this.tool.habitat && !this.world.builder.decorAt(tile.tx, tile.ty));
       return;
     }
     if (type === 'placeMonster') {

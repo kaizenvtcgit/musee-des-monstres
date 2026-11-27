@@ -2,6 +2,7 @@ import './ui.css';
 import { t } from '../i18n/index.js';
 import { BALANCE } from '../config/balance.js';
 import { SPECIES, LOCATIONS, HABITATS } from '../config/species.js';
+import { ENCLOSURE_DECOR, decorForHabitat } from '../config/decor.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { resolveMonsterTexture, realKey, visitorLook } from './sprites.js';
 import { capacity, canBreed } from '../sim/breeding.js';
@@ -53,6 +54,7 @@ class UI {
       <div id="toasts"></div>
       <div id="panel" class="card"></div>
       <div id="habitats" class="card"></div>
+      <div id="decors" class="card"></div>
       <div id="toolbar" class="card"></div>
       <div id="hint" class="card" style="display:none"></div>
       <div id="help" class="card">${esc(t('hud.help'))}</div>`;
@@ -61,7 +63,8 @@ class UI {
     this.el('panel').addEventListener('pointerdown', (e) => this.onPanel(e));
     this.el('toolbar').addEventListener('pointerdown', (e) => this.onToolbar(e));
     this.el('habitats').addEventListener('pointerdown', (e) => this.onHabitat(e));
-    for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'objectives']) {
+    this.el('decors').addEventListener('pointerdown', (e) => this.onDecor(e));
+    for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'decors', 'objectives']) {
       this.el(id).addEventListener('wheel', (e) => e.stopPropagation());
     }
   }
@@ -71,6 +74,7 @@ class UI {
     this.renderToolbar();
     this.el('habitats').innerHTML = HABITATS.map((h) => `
       <button data-habitat="${h}"><img src="${this.img(`tile-${h}`)}" width="40"><small>${esc(t(`habitat.${h}`))}</small></button>`).join('');
+    this.renderDecorPicker();
     this.setTool({ type: 'select' });
     this.refresh(true);
     if (this.resumed) this.toast(t('save.resumed'), 'good');
@@ -116,11 +120,21 @@ class UI {
   setTool(tool) {
     this.tool = tool;
     if (this.scene) this.scene.setTool(tool);
-    const active = tool.type === 'enclosure' || tool.type === 'pickHabitat' ? 'enclosure' : tool.type;
+    const DECOR_TOOLS = ['pickDecor', 'decor', 'decoration'];
+    let active = tool.type === 'enclosure' || tool.type === 'pickHabitat' ? 'enclosure' : tool.type;
+    if (DECOR_TOOLS.includes(tool.type)) active = 'decoration';
+    // the picker closes once a decoration is chosen, so it does not hide the map while placing it
+    this.el('decors').classList.toggle('open', tool.type === 'pickDecor');
+    for (const b of this.el('decors').querySelectorAll('button')) {
+      b.classList.toggle('active', tool.type === 'decor' ? b.dataset.decor === tool.decor : tool.type === 'decoration' && b.dataset.garden !== undefined);
+    }
     for (const b of this.el('toolbar').querySelectorAll('button')) b.classList.toggle('active', b.dataset.tool === active);
     this.el('habitats').classList.toggle('open', tool.type === 'pickHabitat' || tool.type === 'enclosure');
     for (const b of this.el('habitats').querySelectorAll('button')) b.classList.toggle('active', b.dataset.habitat === tool.habitat);
-    this.hint(tool.type === 'placeMonster' ? t('hatchery.pickEnclosure', { habitat: t(`habitat.${tool.habitat}`).toLowerCase() }) : null);
+    let hint = null;
+    if (tool.type === 'placeMonster') hint = t('hatchery.pickEnclosure', { habitat: t(`habitat.${tool.habitat}`).toLowerCase() });
+    if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
+    this.hint(hint);
   }
 
   onToolbar(e) {
@@ -134,7 +148,56 @@ class UI {
       return;
     }
     if (type === 'enclosure') this.setTool({ type: 'pickHabitat' });
+    else if (type === 'decoration') this.setTool({ type: 'pickDecor' });
     else this.setTool({ type });
+  }
+
+  // The decoration picker: the garden one (on the grass) and three per habitat (inside the enclosures).
+  renderDecorPicker() {
+    const item = (id) => `
+      <button data-decor="${id}" title="${esc(t('decor.enclosureHelp'))}">
+        <img src="${this.decorImg(id)}"><small>${esc(t(`decor.${id}`))}</small><small class="price">${esc(t('tool.price', { n: ENCLOSURE_DECOR[id].price }))}</small>
+      </button>`;
+    this.el('decors').innerHTML = `
+      <div class="group"><h4>${esc(t('decor.garden'))}</h4>
+        <button data-garden title="${esc(t('decor.gardenHelp'))}"><img src="${this.img('decoration')}"><small>${esc(t('decor.garden'))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.decorationCost }))}</small></button>
+      </div>
+      ${HABITATS.map((h) => `<div class="group"><h4>${esc(t(`habitat.${h}`))}</h4>${decorForHabitat(h).map((d) => item(d.id)).join('')}</div>`).join('')}`;
+  }
+
+  // Icon of a decoration: its first image, cropped around the object.
+  decorImg(id) {
+    const key = `img-decor-${id}-0`;
+    if (!this.scene.textures.exists(key)) return '';
+    if (!this.imgCache.has(key)) {
+      // crop a square around the visible pixels of the image
+      const src = this.scene.textures.get(key).getSourceImage();
+      const full = document.createElement('canvas');
+      full.width = src.width; full.height = src.height;
+      const g = full.getContext('2d', { willReadFrequently: true });
+      g.drawImage(src, 0, 0);
+      const a = g.getImageData(0, 0, full.width, full.height).data;
+      let x0 = full.width, y0 = full.height, x1 = 0, y1 = 0;
+      for (let y = 0; y < full.height; y++) {
+        for (let x = 0; x < full.width; x++) {
+          if (a[(y * full.width + x) * 4 + 3] < 24) continue;
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        }
+      }
+      const side = Math.max(x1 - x0, y1 - y0) + 6;
+      const c = document.createElement('canvas');
+      c.width = c.height = side;
+      c.getContext('2d').drawImage(full, (x0 + x1 - side) / 2, (y0 + y1 - side) / 2, side, side, 0, 0, side, side);
+      this.imgCache.set(key, c.toDataURL());
+    }
+    return this.imgCache.get(key);
+  }
+
+  onDecor(e) {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.garden !== undefined) this.setTool({ type: 'decoration' });
+    else this.setTool({ type: 'decor', decor: btn.dataset.decor, habitat: ENCLOSURE_DECOR[btn.dataset.decor].habitat });
   }
 
   onHabitat(e) {
@@ -248,7 +311,7 @@ class UI {
       if (!e) return null;
       const head = `${close}<h3><img class="portrait" src="${this.img(`tile-${e.habitat}`)}">${esc(t('tool.enclosure'))} ${esc(t(`habitat.${e.habitat}`))}</h3>
         <div class="row">${esc(t('enclosure.size', { n: e.area }))}</div>`;
-      if (!e.monsterIds.length) return `${head}<div class="row">${esc(t('enclosure.empty'))}</div>`;
+      if (!e.monsterIds.length) return `${head}<div class="row">${esc(t('enclosure.empty'))}</div>${this.decorRow(e)}`;
       const max = capacity(e, e.speciesId);
       const list = e.monsterIds.map((id) => w.monsters.get(id)).filter(Boolean).map((m) => `
         <button data-action="open" data-id="${m.id}"><img src="${this.img(resolveMonsterTexture(this.scene, m).key)}">
@@ -261,7 +324,7 @@ class UI {
       } else if (e.monsterIds.length >= max) nest = `<div class="row">${esc(t('enclosure.nestFull'))}</div>`;
       else nest = `<div class="row">${esc(t('enclosure.nestWaiting'))}</div>`;
       return `${head}<div class="row">${esc(t('enclosure.places', { n: e.monsterIds.length, max }))}</div>
-        <div class="list">${list}</div>${nest}`;
+        <div class="list">${list}</div>${nest}${this.decorRow(e)}`;
     }
 
     if (sel.kind === 'building' && sel.type === 'expeditionBase') {
@@ -325,6 +388,14 @@ class UI {
       this.selection = { kind: 'monster', id };
     }
     this.refresh(true);
+  }
+
+  // Decorations of an enclosure and what they bring (only the first BALANCE.decorMaxCount count).
+  decorRow(e) {
+    const n = (e.decor ?? []).length;
+    if (!n) return `<div class="row muted">${esc(t('enclosure.decorNone'))}</div>`;
+    const k = Math.min(n, BALANCE.decorMaxCount);
+    return `<div class="row">${esc(t('enclosure.decor', { n, h: k * BALANCE.decorHappiness, a: Math.round(k * BALANCE.decorAppeal * 100) }))}</div>`;
   }
 
   // ---- messages ----------------------------------------------------------

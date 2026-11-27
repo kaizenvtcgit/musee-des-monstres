@@ -1,4 +1,5 @@
 import { BALANCE } from '../config/balance.js';
+import { ENCLOSURE_DECOR } from '../config/decor.js';
 
 const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
@@ -45,10 +46,35 @@ export class Builder {
     if (!this.wallet.spend(price)) return fail('noMoney');
     const id = `enc${this.nextId++}`;
     this.enclosures.set(id, {
-      id, x0, y0, x1, y1, habitat, area, price, monsterIds: [], speciesId: null, breedTimer: 0,
+      id, x0, y0, x1, y1, habitat, area, price, monsterIds: [], speciesId: null, breedTimer: 0, decor: [],
     });
     this.#fillRect(x0, y0, x1, y1, id);
     return { ok: true, id };
+  }
+
+  // A decoration (src/config/decor.js) on a tile inside an enclosure of its habitat, one per tile.
+  placeDecor(tx, ty, type) {
+    const def = ENCLOSURE_DECOR[type];
+    const tile = this.grid.getTile(tx, ty);
+    if (!def || !tile) return fail('outOfBounds');
+    const e = tile.occupant && this.enclosures.get(tile.occupant);
+    if (!e) return fail('notInEnclosure');
+    if (e.habitat !== def.habitat) return fail('wrongDecorHabitat');
+    e.decor ??= [];
+    if (e.decor.some((d) => d.tx === tx && d.ty === ty)) return fail('occupied');
+    if (!this.wallet.spend(def.price)) return fail('noMoney');
+    const id = `dec${this.nextId++}`;
+    e.decor.push({ id, type, tx, ty, price: def.price });
+    this.grid.version++; // redraw
+    return { ok: true, id, enclosureId: e.id };
+  }
+
+  // The decoration on this tile, with its enclosure, or null.
+  decorAt(tx, ty) {
+    const tile = this.grid.getTile(tx, ty);
+    const e = tile && tile.occupant && this.enclosures.get(tile.occupant);
+    const d = e && (e.decor ?? []).find((x) => x.tx === tx && x.ty === ty);
+    return d ? { decor: d, enclosure: e } : null;
   }
 
   // opts.free: no cost (initial world); opts.fixed: cannot be demolished.
@@ -69,13 +95,22 @@ export class Builder {
     const tile = this.grid.getTile(tx, ty);
     if (!tile) return fail('outOfBounds');
     const id = tile.occupant;
+    // a decoration goes first, before its enclosure
+    const found = this.decorAt(tx, ty);
+    if (found) {
+      found.enclosure.decor = found.enclosure.decor.filter((d) => d !== found.decor);
+      this.wallet.earn(found.decor.price * BALANCE.demolishRefund);
+      this.grid.version++;
+      return { ok: true, id: found.decor.id };
+    }
     if (id && this.enclosures.has(id)) {
       const e = this.enclosures.get(id);
       if (e.monsterIds.length && !this.onEnclosureEmptied([...e.monsterIds])) return fail('enclosureNotEmpty');
       e.monsterIds = [];
       this.enclosures.delete(id);
       this.#fillRect(e.x0, e.y0, e.x1, e.y1, null);
-      this.wallet.earn(e.price * BALANCE.demolishRefund);
+      const decorPrice = (e.decor ?? []).reduce((s, d) => s + d.price, 0);
+      this.wallet.earn((e.price + decorPrice) * BALANCE.demolishRefund);
       return { ok: true, id };
     }
     if (id && this.buildings.has(id)) {

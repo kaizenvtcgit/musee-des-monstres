@@ -14,7 +14,8 @@ export const RARE_FALLBACK_TINT = 0xffd36b;
 
 // Realistic ground tiles and buildings rendered in Blender (2x the in-game size).
 // Their file name is the procedural texture key they replace: tile-grass.png, bld-snack.png...
-const decor = import.meta.glob(['../assets/tiles/*.{png,webp}', '../assets/buildings/*.{png,webp}'], { eager: true, query: '?url', import: 'default' });
+// Enclosure decorations (scripts/render-model/render-decor.mjs): "decor-<id>-<variant>.png".
+const decor = import.meta.glob(['../assets/tiles/*.{png,webp}', '../assets/buildings/*.{png,webp}', '../assets/decor/*.png'], { eager: true, query: '?url', import: 'default' });
 export const DECOR_URLS = Object.fromEntries(
   Object.entries(decor).map(([path, url]) => [path.split('/').pop().replace(/\.(png|webp)$/, ''), url]),
 );

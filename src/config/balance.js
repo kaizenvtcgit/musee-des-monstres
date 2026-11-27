@@ -24,6 +24,11 @@ export const BALANCE = {
   snackPrice: 8,
   souvenirPrice: 15,
   decorationRadius: 3,
+  // decorations inside an enclosure (src/config/decor.js), each one up to decorMaxCount:
+  decorHappiness: 5, // + happiness points for its monsters
+  decorAppeal: 0.1, // + 10 % appeal for the visitors
+  decorWatch: 0.15, // + 15 % time spent watching
+  decorMaxCount: 4,
   maxSubstepSec: 0.1,
   breedTimeSec: 180,
   breedMinHappiness: 70,
