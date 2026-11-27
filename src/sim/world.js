@@ -136,6 +136,25 @@ export class World {
     return true;
   }
 
+  // Is at least one monster on show in an enclosure that touches a path linked to the entrance?
+  #hasSomethingToSee() {
+    const { grid, builder } = this;
+    const shown = [...builder.enclosures.values()]
+      .filter((e) => e.monsterIds.some((id) => this.monsters.get(id)?.state === 'enclosed'));
+    if (!shown.length) return false;
+    // every path tile reachable on foot from the entrance (one breadth-first walk)
+    const key = (x, y) => y * grid.w + x;
+    const seen = new Set([key(this.entrance.tx, this.entrance.ty)]);
+    const queue = [this.entrance];
+    for (let i = 0; i < queue.length; i++) {
+      for (const n of grid.neighbors4(queue[i].tx, queue[i].ty)) {
+        const k = key(n.tx, n.ty);
+        if (!seen.has(k) && grid.isPath(n.tx, n.ty)) { seen.add(k); queue.push(n); }
+      }
+    }
+    return shown.some((e) => builder.accessTiles(e.id).some((a) => seen.has(key(a.tx, a.ty))));
+  }
+
   #updateBreeding(dt) {
     for (const e of this.builder.enclosures.values()) {
       const pending = this.hatchery.eggs.filter((egg) => egg.parentEnclosureId === e.id).length;
@@ -188,7 +207,10 @@ export class World {
 
     this.spawnTimer += dt;
     const interval = Math.max(MIN_SPAWN_INTERVAL, spawnIntervalSec(this.reputation, this.ticketPrice));
-    if (this.spawnTimer >= interval && this.visitors.length < MAX_VISITORS) {
+    // nobody comes in (nor pays a ticket) while there is no monster to see from the paths:
+    // the timer waits, so the next visitor arrives as soon as one is on show again
+    if (this.spawnTimer >= interval && !this.#hasSomethingToSee()) this.spawnTimer = interval;
+    else if (this.spawnTimer >= interval && this.visitors.length < MAX_VISITORS) {
       this.spawnTimer = 0;
       this.visitors.push(createVisitor(this.entrance, Math.floor(this.rng() * 4)));
       this.totalVisitors++;

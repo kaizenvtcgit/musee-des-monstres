@@ -134,6 +134,36 @@ describe('World.tick', () => {
     expect(w.builder.placeEnclosure(x, y, x + 1, y + 1, 'lava')).toEqual({ ok: false, reason: 'occupied' });
   });
 
+  it('no visitor comes (and no ticket is paid) when no monster can be seen from the paths', () => {
+    const w = createInitialWorld();
+    const golem = [...w.monsters.values()][0];
+    const e = w.builder.enclosures.get(golem.enclosureId);
+    w.builder.demolish(e.x0, e.y0); // the golem goes back to the hatchery: nothing left to see
+    const money = w.wallet.money;
+    for (let i = 0; i < 1200; i++) w.tick(0.1);
+    expect(w.totalVisitors).toBe(0);
+    expect(w.wallet.money).toBe(money);
+  });
+
+  it('no visitor comes when the only monster is in an enclosure the paths cannot reach', () => {
+    const w = createInitialWorld();
+    const golem = [...w.monsters.values()][0];
+    const e = w.builder.enclosures.get(golem.enclosureId);
+    w.builder.demolish(e.x0, e.y0);
+    const far = w.builder.placeEnclosure(2, 2, 3, 3, 'forest'); // touches no path
+    w.placeStoredMonster(golem.id, far.id);
+    const money = w.wallet.money;
+    for (let i = 0; i < 1200; i++) w.tick(0.1);
+    expect(w.totalVisitors).toBe(0);
+    expect(w.wallet.money).toBe(money);
+  });
+
+  it('visitors come back as soon as a monster is on show again', () => {
+    const w = createInitialWorld();
+    for (let i = 0; i < 600; i++) w.tick(0.1);
+    expect(w.totalVisitors).toBeGreaterThan(0);
+  });
+
   it('feedMonster costs 20 and resets hunger', () => {
     const w = createInitialWorld();
     const m = [...w.monsters.values()][0];
