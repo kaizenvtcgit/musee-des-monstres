@@ -12,6 +12,13 @@ const BUILDING_DEFS = {
 
 const fail = (reason) => ({ ok: false, reason });
 
+// Price of an enclosure dragged between two corner tiles (any order): its area x the price per tile.
+// Used both to build it and to show its price while dragging, so the two always match.
+export function enclosurePrice(ax, ay, bx, by) {
+  const area = (Math.abs(bx - ax) + 1) * (Math.abs(by - ay) + 1);
+  return area * BALANCE.enclosureCostPerTile;
+}
+
 export class Builder {
   constructor(grid, wallet) {
     this.grid = grid;
@@ -43,7 +50,7 @@ export class Builder {
     if (x1 - x0 < 1 || y1 - y0 < 1) return fail('tooSmall');
     if (!this.#rectFree(x0, y0, x1, y1)) return fail('occupied');
     const area = (x1 - x0 + 1) * (y1 - y0 + 1);
-    const price = area * BALANCE.enclosureCostPerTile;
+    const price = enclosurePrice(ax, ay, bx, by);
     if (!this.wallet.spend(price)) return fail('noMoney');
     const id = `enc${this.nextId++}`;
     this.enclosures.set(id, {

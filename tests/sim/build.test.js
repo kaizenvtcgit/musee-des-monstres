@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../../src/sim/grid.js';
 import { Wallet } from '../../src/sim/wallet.js';
-import { Builder } from '../../src/sim/build.js';
+import { Builder, enclosurePrice } from '../../src/sim/build.js';
 
 function setup(money = 5000) {
   const grid = new Grid(40, 40);
@@ -66,6 +66,14 @@ describe('Builder', () => {
     const { builder } = setup();
     const r = builder.placeEnclosure(4, 3, 2, 2, 'ice');
     expect(builder.enclosures.get(r.id)).toMatchObject({ x0: 2, y0: 2, x1: 4, y1: 3 });
+  });
+
+  it('enclosurePrice is exactly what placing the enclosure costs, in any drag direction', () => {
+    const { wallet, builder } = setup();
+    expect(enclosurePrice(5, 7, 2, 3)).toBe(4 * 5 * 50);
+    const before = wallet.money;
+    builder.placeEnclosure(5, 7, 2, 3, 'lava');
+    expect(before - wallet.money).toBe(enclosurePrice(5, 7, 2, 3));
   });
 
   it('enclosure smaller than 2x2 refused', () => {

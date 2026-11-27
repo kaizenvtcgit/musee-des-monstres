@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { straightLine } from '../../src/render/pathline.js';
+import { straightLine, pathLineCost } from '../../src/render/pathline.js';
 
 const keys = (cells) => cells.map((c) => `${c.tx},${c.ty}`);
 
@@ -18,6 +18,13 @@ describe('straightLine', () => {
 
   it('works backwards too', () => {
     expect(keys(straightLine({ tx: 6, ty: 1 }, { tx: 3, ty: 1 }))).toEqual(['6,1', '5,1', '4,1', '3,1']);
+  });
+
+  it('pathLineCost counts only the tiles that are not paths yet', () => {
+    const existing = new Set(['3,2', '4,2']);
+    const isPath = (tx, ty) => existing.has(`${tx},${ty}`);
+    const line = straightLine({ tx: 1, ty: 2 }, { tx: 6, ty: 2 }); // 6 tiles, 2 already paths
+    expect(pathLineCost(line, isPath, 10)).toEqual({ tiles: 4, cost: 40 });
   });
 
   it('never leaves the starting row or column', () => {

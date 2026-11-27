@@ -9,3 +9,10 @@ export function straightLine(start, end) {
   for (let i = 0; i <= n; i++) cells.push({ tx: start.tx + sx * i, ty: start.ty + sy * i });
   return cells;
 }
+
+// What laying this line costs: tiles for which isSkipped(tx, ty) is true (already a path,
+// or not buildable) are not paid.
+export function pathLineCost(cells, isSkipped, pricePerTile) {
+  const tiles = cells.filter((c) => !isSkipped(c.tx, c.ty)).length;
+  return { tiles, cost: tiles * pricePerTile };
+}

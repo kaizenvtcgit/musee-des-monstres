@@ -7,7 +7,10 @@ import {
   visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y, monsterFx, MONSTER_EVENTS,
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
-import { straightLine } from './pathline.js';
+import { straightLine, pathLineCost } from './pathline.js';
+import { enclosurePrice } from '../sim/build.js';
+
+const fmtCost = (n) => Math.round(n).toLocaleString('fr-FR');
 import { t as tr } from '../i18n/index.js';
 import { MonsterFX } from './monsterfx.js';
 import { BALANCE } from '../config/balance.js';
@@ -165,7 +168,9 @@ export class GameScene extends Phaser.Scene {
   setTool(tool) {
     this.tool = tool;
     this.dragStart = null;
+    this.pathStart = null;
     this.ghost.clear();
+    if (this.costLabel) this.costLabel.setVisible(false);
   }
 
   // ---- frame ------------------------------------------------------------
@@ -871,9 +876,25 @@ export class GameScene extends Phaser.Scene {
     if (bld) this.ui.select({ kind: 'building', id: bld.id, type: bld.type });
   }
 
+  // Price label next to the pointer while dragging a path or an enclosure (red when too expensive).
+  showCost(tile, text, cost) {
+    if (!this.costLabel) {
+      this.costLabel = this.add.text(0, 0, '', {
+        fontFamily: 'Segoe UI, system-ui, sans-serif', fontSize: '15px', fontStyle: 'bold',
+        color: '#ffffff', backgroundColor: 'rgba(14,17,20,0.88)', padding: { x: 8, y: 5 },
+      }).setOrigin(0, 1).setDepth(GHOST_DEPTH + 1);
+    }
+    const c = tileToScreen(tile.tx, tile.ty);
+    const zoom = this.cameras.main.zoom;
+    const affordable = this.world.wallet.canAfford(cost);
+    this.costLabel.setText(text).setColor(affordable ? '#ffffff' : '#ff6b62')
+      .setScale(1 / zoom).setPosition(c.x + 18 / zoom, c.y - 14 / zoom).setVisible(true);
+  }
+
   drawGhost(tile) {
     const g = this.ghost;
     g.clear();
+    if (this.costLabel) this.costLabel.setVisible(false);
     const { grid } = this.world;
     const type = this.tool.type;
     if (type === 'select') return;
@@ -889,18 +910,19 @@ export class GameScene extends Phaser.Scene {
       let ok = x1 > x0 && y1 > y0;
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!grid.isFree(x, y)) ok = false;
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (grid.inBounds(x, y)) diamondAt(x, y, ok);
-      this.ui.hint(`${(x1 - x0 + 1)} × ${(y1 - y0 + 1)}`);
+      const cost = enclosurePrice(this.dragStart.tx, this.dragStart.ty, tile.tx, tile.ty);
+      this.showCost(tile, tr('cost.enclosure', { w: x1 - x0 + 1, h: y1 - y0 + 1, cost: fmtCost(cost) }), cost);
       return;
     }
     if (type === 'path' && this.pathStart) {
       // preview of the straight path being dragged, with its price
-      let n = 0;
-      for (const c of straightLine(this.pathStart, tile)) {
+      const line = straightLine(this.pathStart, tile);
+      for (const c of line) {
         if (!grid.inBounds(c.tx, c.ty) || grid.isPath(c.tx, c.ty)) continue;
         diamondAt(c.tx, c.ty, grid.isFree(c.tx, c.ty));
-        if (grid.isFree(c.tx, c.ty)) n++;
       }
-      this.ui.hint(tr('hint.path', { n, cost: n * BALANCE.pathCost }));
+      const { tiles, cost } = pathLineCost(line, (x, y) => !grid.isFree(x, y), BALANCE.pathCost);
+      this.showCost(tile, tr('cost.path', { n: tiles, cost: fmtCost(cost) }), cost);
       return;
     }
     if (!grid.inBounds(tile.tx, tile.ty)) return;
