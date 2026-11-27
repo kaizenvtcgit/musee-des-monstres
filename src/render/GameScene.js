@@ -40,6 +40,13 @@ const MONSTER_RADIUS = { dragonnet: 0.6, kraken: 0.6, spectre: 0.4, golem: 0.45,
 import { capacity } from '../sim/breeding.js';
 
 const GROUND_DEPTH = -1e6;
+// Small 3D details scattered on the enclosure grounds, per habitat (none on lava, water, snow).
+const ENCLOSURE_GROUND_DETAIL = {
+  forest: { kinds: ['img-grass-tuft', 'img-grass-tuft', 'img-grass-tuftDry', 'img-grass-pebbles'], chance: 0.4 },
+  ruins: { kinds: ['img-grass-tuft', 'img-grass-tuftDry', 'img-grass-pebbles'], chance: 0.25 },
+  dark: { kinds: ['img-grass-pebbles', 'img-grass-tuftDry'], chance: 0.14 },
+  graveyard: { kinds: ['img-grass-tuftDry', 'img-grass-tuftDry', 'img-grass-pebbles'], chance: 0.3 },
+};
 const FENCE_DEPTH = -5e5;
 const GHOST_DEPTH = 1e6;
 const FENCE_COLOR = 0x8a6038;
@@ -138,6 +145,48 @@ export class GameScene extends Phaser.Scene {
   }
 
   // One of the realistic grass variants (procedural fallback when renders are missing).
+  // Soft shade on the enclosure ground along its walls (contact shadow, and the walls' own shadow on
+  // the sides the sun comes from: upper left), so the ground sits under the walls instead of looking
+  // like a picture laid on the map. One image per wall side touching the tile.
+  drawEnclosureShade() {
+    for (const im of this.wallShade || []) im.destroy();
+    this.wallShade = [];
+    // side: [dx, dy] towards the wall; sun side walls (-x, -y) cast a longer, darker shade
+    const SIDES = { n: [0, -1, 0.75, 0.55], e: [1, 0, 0.4, 0.32], s: [0, 1, 0.4, 0.32], w: [-1, 0, 0.75, 0.55] };
+    for (const [side, [dx, dy, width, dark]] of Object.entries(SIDES)) {
+      const key = `wall-shade-${side}`;
+      if (this.textures.exists(key)) continue;
+      const W = 128, H = 64;
+      const c = this.textures.createCanvas(key, W, H);
+      const ctx = c.getContext();
+      const img = ctx.createImageData(W, H);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          // screen pixel -> tile coordinates (u along x, v along y), each in -0.5 .. 0.5
+          const sx = (x + 0.5 - W / 2) / (W / 2), sy = (y + 0.5 - H / 2) / (H / 2);
+          const u = (sx + sy) / 2, v = (sy - sx) / 2;
+          if (Math.abs(u) > 0.5 || Math.abs(v) > 0.5) continue; // edge to edge: an overlap would darken a line
+          const d = 0.5 + (dx ? -dx * u : -dy * v); // distance from the wall side, in tiles
+          const a = Math.max(0, 1 - d / width);
+          img.data[(y * W + x) * 4 + 3] = Math.round(a * a * dark * 255);
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      c.refresh();
+    }
+    for (const e of this.world.builder.enclosures.values()) {
+      for (let ty = e.y0; ty <= e.y1; ty++) {
+        for (let tx = e.x0; tx <= e.x1; tx++) {
+          const p = tileToScreen(tx, ty);
+          const on = { n: ty === e.y0, s: ty === e.y1, w: tx === e.x0, e: tx === e.x1 };
+          for (const side of Object.keys(on)) {
+            if (on[side]) this.wallShade.push(this.add.image(p.x, p.y, `wall-shade-${side}`).setDisplaySize(64, 32).setDepth(GROUND_DEPTH + 1));
+          }
+        }
+      }
+    }
+  }
+
   // A tile of a photo-realistic ground sheet (scripts/render-model/render-ground.mjs): the sheet holds a
   // block of n x n tiles that fit together (row = y), the map picks tile (tx mod n, ty mod n).
   // null when the sheet is not there (then the older single tiles are used).
@@ -157,9 +206,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   // A small tuft, wild flowers or pebbles on some grass tiles, to break the flat lawn.
-  addGrassDetail(tx, ty, list) {
-    if (GameScene.tileHash(tx, ty, 1) > 0.22) return;
-    const kinds = ['img-grass-tuft', 'img-grass-tuft', 'img-grass-tuftDry', 'img-grass-wildflowers', 'img-grass-pebbles'];
+  // kinds / chance: other sets for the enclosure grounds (ENCLOSURE_GROUND_DETAIL).
+  addGrassDetail(tx, ty, list, kinds = ['img-grass-tuft', 'img-grass-tuft', 'img-grass-tuftDry', 'img-grass-wildflowers', 'img-grass-pebbles'], chance = 0.22) {
+    if (GameScene.tileHash(tx, ty, 1) > chance) return;
     const key = kinds[Math.floor(GameScene.tileHash(tx, ty, 2) * kinds.length)];
     if (!this.textures.exists(key)) return;
     const jx = (GameScene.tileHash(tx, ty, 3) - 0.5) * 0.6, jy = (GameScene.tileHash(tx, ty, 4) - 0.5) * 0.6;
@@ -221,12 +270,21 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    this.drawEnclosureShade();
+
     // grass details only on free lawn tiles (removed under paths, enclosures and buildings)
     for (const d of this.grassDetails || []) d.destroy();
     this.grassDetails = [];
     for (let ty = 0; ty < grid.h; ty++) {
       for (let tx = 0; tx < grid.w; tx++) {
         if (grid.isFree(tx, ty)) this.addGrassDetail(tx, ty, this.grassDetails);
+        else {
+          // a few small 3D tufts and stones on some enclosure grounds, so they are not a flat picture
+          const t = grid.getTile(tx, ty);
+          const enc = t.occupant && builder.enclosures.get(t.occupant);
+          const d = enc && ENCLOSURE_GROUND_DETAIL[enc.habitat];
+          if (d && !builder.decorAt?.(tx, ty)) this.addGrassDetail(tx, ty, this.grassDetails, d.kinds, d.chance);
+        }
       }
     }
 

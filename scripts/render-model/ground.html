@@ -156,14 +156,18 @@ function waterMaterial({ deep = [14, 62, 78], light = [36, 96, 108], waves = 6, 
 }
 
 // A photo material from ambientCG: /tex/<id>/<id>_1K-JPG_<Map>.jpg; `repeat` = texture copies per block.
-async function photoMaterial({ id, repeat, tint, emissive, emissiveIntensity, roughness, normalScale = 1, envMapIntensity = 0.3, macro }) {
+// relief: real bumps from the texture's height map (in tiles), lit by the sun with cast shadows, so the
+// ground is not a flat picture: stones, crusts and clods stand out and shade their neighbours.
+async function photoMaterial({ id, repeat, tint, emissive, emissiveIntensity, roughness, normalScale = 1, envMapIntensity = 0.3, macro, relief = 0 }) {
   const base = `/tex/${id}/${id}_1K-JPG_`;
   const opt = (name, color) => load(`${base}${name}.jpg`, repeat, color).catch(() => null);
-  const [map, normalMap, roughnessMap, aoMap, emissiveMap] = await Promise.all([
+  const [map, normalMap, roughnessMap, aoMap, emissiveMap, displacementMap] = await Promise.all([
     macro ? macroMap(`${base}Color.jpg`, repeat, macro) : opt('Color', true),
     opt('NormalGL'), opt('Roughness'), opt('AmbientOcclusion'), emissive ? opt('Emission', true) : null,
+    relief ? opt('Displacement') : null,
   ]);
   return new THREE.MeshStandardMaterial({
+    displacementMap, displacementScale: relief, displacementBias: -relief * 0.5,
     map, normalMap, roughnessMap, aoMap, aoMapIntensity: 1,
     normalScale: new THREE.Vector2(normalScale, normalScale),
     color: new THREE.Color(tint ?? 0xffffff),
@@ -186,14 +190,48 @@ function setBlock(n) {
   const target = new THREE.Vector3(N / 2, 0, N / 2);
   cam.position.set(Math.sin(az) * Math.cos(el) * 40, Math.sin(el) * 40, Math.cos(az) * Math.cos(el) * 40).add(target);
   cam.lookAt(target);
-  const geo = new THREE.PlaneGeometry(N, N);
+  // the sun follows the block, its shadow map covers it (plus the margin)
+  sun.position.set(-4, 7, 2).multiplyScalar(3).add(target);
+  sun.target.position.copy(target);
+  const sc = sun.shadow.camera;
+  sc.left = sc.bottom = -(N + 4); sc.right = sc.top = N + 4; sc.near = 0.1; sc.far = 80;
+  sc.updateProjectionMatrix();
+  sheet.width = N * TW; sheet.height = N * TH;
+  segments = -1;
+}
+
+// The plane reaches one tile past the block on every side (MARGIN), with the textures continuing
+// across: the bumps of the next block cast their shadows into this one, so blocks still join seamlessly.
+const MARGIN = 1;
+let segments = -1;
+function setGround(perTile) {
+  if (perTile === segments) return;
+  segments = perTile;
+  const size = N + 2 * MARGIN, seg = Math.max(1, size * perTile);
+  const geo = new THREE.PlaneGeometry(size, size, seg, seg);
   geo.rotateX(-Math.PI / 2);
   geo.translate(N / 2, 0, N / 2);
-  geo.setAttribute('uv2', geo.attributes.uv);
   ground.geometry.dispose();
   ground.geometry = geo;
-  sheet.width = N * TW; sheet.height = N * TH;
 }
+// Textures are set up for a block (uv 0..1 = N tiles): stretch them over the bigger plane.
+function fitTextures(mat) {
+  const k = (N + 2 * MARGIN) / N;
+  for (const key of ['map', 'normalMap', 'roughnessMap', 'aoMap', 'emissiveMap', 'displacementMap']) {
+    const t = mat[key];
+    if (!t) continue;
+    const r = t.repeat.x;
+    t.repeat.set(r * k, r * k);
+    t.offset.set(-r * MARGIN / N, -r * MARGIN / N);
+  }
+}
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.01;
+scene.add(sun.target);
 
 // Large soft patches baked into the colour map over the whole block (lighter / darker, drier / greener),
 // so a lawn of repeated photo copies does not look like wallpaper. The patches tile with the block.
@@ -246,6 +284,10 @@ window.renderGround = async (opts) => {
   if ((opts.block ?? 4) !== N) setBlock(opts.block ?? 4);
   sctx.clearRect(0, 0, sheet.width, sheet.height);
   ground.material = opts.water ? waterMaterial(opts.water === true ? {} : opts.water) : await photoMaterial(opts);
+  fitTextures(ground.material);
+  const relief = !opts.water && opts.relief > 0;
+  setGround(relief ? 48 : 1);
+  ground.castShadow = ground.receiveShadow = relief;
   renderer.render(scene, cam);
   const tiles = [];
   for (let ty = 0; ty < N; ty++) {
