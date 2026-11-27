@@ -29,7 +29,9 @@ const DECOR_RADIUS = 0.32;
 // Shelter images (scripts/render-model/render-decor.mjs: SHELTER_FRAME): size and ground row of the centre of
 // its 2 x 2 tiles; SHELTER_RADIUS: room it takes for the monsters; SHELTER_ENTRANCE: where the entrance is
 // (tile y of the monster resting in it, from the shelter's first tile).
-const SHELTER_IMG = { w: 288, h: 320, groundY: 230 };
+const SHELTER_IMG = { w: 288, h: 320, groundY: 230, tiles: 2 };
+// Shelters remodelled in Blender (models/blender/musee-decors.blend, scene MuseeShelters) for 3 x 3 tiles.
+const SHELTER_IMG_3D = { lava: { w: 432, h: 480, groundY: 345, tiles: 3 } };
 const SHELTER_RADIUS = 0.8;
 const SHELTER_ENTRANCE = 1.15;
 // Colour of the eyes glowing in the dark of a shelter.
@@ -315,11 +317,13 @@ export class GameScene extends Phaser.Scene {
       if (sh && this.textures.exists(`img-shelter-${sh.family}`)) {
         // centre of its n x n tiles; the image (made for 2 x 2) is scaled to its size; drawn a little
         // in front so a monster just behind it is hidden by it
-        const n = shelterSize(sh), half = (n - 1) / 2, k = n / 2;
+        const n = shelterSize(sh), half = (n - 1) / 2;
+        const F = SHELTER_IMG_3D[sh.family] ?? SHELTER_IMG;
+        const k = n / F.tiles; // the image is made for F.tiles x F.tiles tiles
         const c = tileToScreen(sh.tx + half, sh.ty + half);
         this.decorSprites.push(this.add.image(c.x, c.y, `img-shelter-${sh.family}`)
-          .setOrigin(0.5, SHELTER_IMG.groundY / SHELTER_IMG.h)
-          .setDisplaySize((SHELTER_IMG.w / 2) * k, (SHELTER_IMG.h / 2) * k).setDepth(c.y + 8 * k));
+          .setOrigin(0.5, F.groundY / F.h)
+          .setDisplaySize((F.w / 2) * k, (F.h / 2) * k).setDepth(c.y + 4 * n));
       }
       for (const d of e.decor ?? []) {
         // the variant (turned differently) is picked from the tile, so it never changes

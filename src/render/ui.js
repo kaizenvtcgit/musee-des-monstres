@@ -227,7 +227,8 @@ class UI {
       const src = this.scene.textures.get(key).getSourceImage();
       const c = document.createElement('canvas');
       c.width = 200; c.height = 170;
-      c.getContext('2d').drawImage(src, 44, 90, 200, 170, 0, 0, 200, 170);
+      const s = src.width / 288; // crop made for the 288 px images; the remodelled 3 x 3 ones are bigger
+      c.getContext('2d').drawImage(src, 44 * s, 90 * s, 200 * s, 170 * s, 0, 0, 200, 170);
       this.imgCache.set(key, c.toDataURL());
     }
     return this.imgCache.get(key);
