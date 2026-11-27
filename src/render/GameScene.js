@@ -10,6 +10,9 @@ import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { MonsterFX } from './monsterfx.js';
 import { Sounds } from './sound.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
+import { HABITAT_FAMILY, habitatFits } from '../config/species.js';
+
+const DECOR_IDS = Object.keys(ENCLOSURE_DECOR); // order of the cells of the decoration atlas
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
 // Enclosure decoration images (scripts/render-model/decor.html): size, ground row, number of variants;
@@ -295,14 +298,15 @@ export class GameScene extends Phaser.Scene {
       for (const d of e.decor ?? []) {
         // the variant (turned differently) is picked from the tile, so it never changes
         const v = (d.tx * 7 + d.ty * 13) % DECOR_VARIANTS;
-        const key = `img-decor-${d.type}-${v}`;
-        if (!this.textures.exists(key)) continue;
+        const key = 'img-decor-atlas';
+        const cell = DECOR_IDS.indexOf(d.type) * DECOR_VARIANTS + v; // see render-decor.mjs
+        if (!this.textures.exists(key) || cell < 0) continue;
         const c = tileToScreen(d.tx, d.ty);
         // a low decoration stays under a monster walking over it
         const depth = ENCLOSURE_DECOR[d.type]?.low ? c.y - 14 : c.y;
-        this.decorSprites.push(this.add.image(c.x, c.y, key)
+        this.decorSprites.push(this.add.image(c.x, c.y, key, cell)
           .setOrigin(0.5, DECOR_IMG.groundY / DECOR_IMG.h).setDisplaySize(DECOR_IMG.w / 2, DECOR_IMG.h / 2).setDepth(depth));
-        if (d.type === 'fumarole') {
+        if (ENCLOSURE_DECOR[d.type]?.smoke) {
           this.decorSmoke.push(this.add.particles(c.x, c.y - 10, 'fx-mist', {
             frequency: 380, lifespan: { min: 2200, max: 3200 }, quantity: 1,
             x: { min: -6, max: 6 }, speedX: { min: -3, max: 5 }, speedY: { min: -16, max: -8 },
@@ -438,7 +442,8 @@ export class GameScene extends Phaser.Scene {
       let x = m.pos.x, y = m.pos.y;
       const enc = m.state === 'enclosed' ? world.builder.enclosures.get(m.enclosureId) : null;
       // a habitat version of the animations if there is one ("kraken_water": swimming in its pool)
-      const habitatAnim = enc && `${m.speciesId}_${enc.habitat}`;
+      // (by habitat family: the kraken swims in the lagoon, the reef and the abyss alike)
+      const habitatAnim = enc && `${m.speciesId}_${HABITAT_FAMILY[enc.habitat]}`;
       const anim = animated && habitatAnim && hasAnimation(this, habitatAnim) ? habitatAnim : m.speciesId;
       const swimming = anim !== m.speciesId;
       const fx = animated ? monsterFx(m.speciesId) : {};
@@ -826,7 +831,7 @@ export class GameScene extends Phaser.Scene {
       const t = grid.getTile(tile.tx, tile.ty);
       const enc = t.occupant && this.world.builder.enclosures.get(t.occupant);
       const sp = this.tool.speciesId;
-      const ok = !!enc && enc.habitat === this.tool.habitat
+      const ok = !!enc && habitatFits(sp, enc.habitat)
         && (enc.monsterIds.length === 0 || enc.speciesId === sp)
         && enc.monsterIds.length < capacity(enc, sp);
       diamondAt(tile.tx, tile.ty, ok);

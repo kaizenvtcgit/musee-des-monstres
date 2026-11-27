@@ -109,6 +109,15 @@ export class World {
     if (m) catchByClick(m, this.ctx);
   }
 
+  // Number of different habitats with at least one monster on show.
+  habitatVariety() {
+    const set = new Set();
+    for (const e of this.builder.enclosures.values()) {
+      if (e.monsterIds.some((id) => this.monsters.get(id)?.state === 'enclosed')) set.add(e.habitat);
+    }
+    return set.size;
+  }
+
   speciesCount() {
     return speciesOwned(this);
   }
@@ -207,6 +216,7 @@ export class World {
       avgSatisfaction: sats.length ? sats.reduce((a, b) => a + b, 0) / sats.length : 0.5,
       speciesCount: speciesOwned(this),
       escapesLast5Min: this.escapeTimes.length,
+      habitatVariety: this.habitatVariety(),
     });
 
     for (const id of checkObjectives(this)) this.events.push({ type: 'objective', id });

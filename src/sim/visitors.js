@@ -1,6 +1,7 @@
 import { BALANCE } from '../config/balance.js';
 import { findPath } from './pathfinding.js';
 import { appeal, decorCount } from './monsters.js';
+import { HABITAT_APPEAL } from '../config/species.js';
 
 const WALK_SPEED = 1.5;
 const FLEE_SPEED = 3;
@@ -119,7 +120,7 @@ function enclosureAppeal(e, ctx) {
     const m = ctx.monsters.get(id);
     if (m && m.state === 'enclosed') total = (total || 0) + appeal(m);
   }
-  return total === null ? null : total * (1 + decorCount(e) * BALANCE.decorAppeal);
+  return total === null ? null : total * (1 + decorCount(e) * BALANCE.decorAppeal) * (HABITAT_APPEAL[e.habitat] ?? 1);
 }
 
 function chooseTarget(v, ctx) {

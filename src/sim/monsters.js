@@ -1,4 +1,4 @@
-import { SPECIES } from '../config/species.js';
+import { SPECIES, habitatFits } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
 
 let nextMonsterId = 1;
@@ -30,7 +30,7 @@ export function decorCount(enclosure) {
 
 export function targetHappiness(monster, enclosure, watchers) {
   const sp = SPECIES[monster.speciesId];
-  const habitatFactor = enclosure.habitat === sp.habitat ? 1 : 0.3;
+  const habitatFactor = habitatFits(monster.speciesId, enclosure.habitat) ? 1 : 0.3;
   const count = Math.max(1, enclosure.monsterIds ? enclosure.monsterIds.length : 1);
   const sizeFactor = Math.min(1, enclosure.area / (sp.minArea * count));
   const decor = decorCount(enclosure) * BALANCE.decorHappiness;

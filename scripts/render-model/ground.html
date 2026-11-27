@@ -108,11 +108,12 @@ function normalMapFrom(height, size, strength) {
 }
 
 // Water: deep teal, small ripples (two periodic noise layers), sky reflections and sun glints.
-function waterMaterial() {
+// `deep`, `light`: rgb of the troughs and of the crests; `sky`: how much the sky is reflected (clear lagoon, dark abyss, murky swamp...).
+function waterMaterial({ deep = [14, 62, 78], light = [36, 96, 108], waves = 6, sky = 1.1 } = {}) {
   const size = 256;
   const a = periodicNoise(size, 14, 11), b = periodicNoise(size, 22, 97);
   const height = a.map((v, i) => v * 0.6 + b[i] * 0.4);
-  const normalMap = normalMapFrom(height, size, 6);
+  const normalMap = normalMapFrom(height, size, waves);
   normalMap.repeat.set(N / 2, N / 2);
   // colour: darker in the troughs, lighter on the crests
   const c = document.createElement('canvas');
@@ -121,7 +122,8 @@ function waterMaterial() {
   const img = g.createImageData(size, size);
   for (let i = 0; i < size * size; i++) {
     const v = a[i];
-    img.data[i * 4] = 14 + v * 22; img.data[i * 4 + 1] = 62 + v * 34; img.data[i * 4 + 2] = 78 + v * 30; img.data[i * 4 + 3] = 255;
+    for (let k = 0; k < 3; k++) img.data[i * 4 + k] = deep[k] + v * (light[k] - deep[k]);
+    img.data[i * 4 + 3] = 255;
   }
   g.putImageData(img, 0, 0);
   const map = new THREE.CanvasTexture(c);
@@ -130,7 +132,7 @@ function waterMaterial() {
   map.repeat.set(N / 2, N / 2);
   return new THREE.MeshStandardMaterial({
     map, normalMap, normalScale: new THREE.Vector2(0.9, 0.9),
-    roughness: 0.08, metalness: 0.1, envMap, envMapIntensity: 1.1,
+    roughness: 0.08, metalness: 0.1, envMap, envMapIntensity: sky,
   });
 }
 
@@ -169,7 +171,7 @@ const sctx = sheet.getContext('2d');
 
 window.renderGround = async (opts) => {
   sctx.clearRect(0, 0, sheet.width, sheet.height);
-  ground.material = opts.water ? waterMaterial() : await photoMaterial(opts);
+  ground.material = opts.water ? waterMaterial(opts.water === true ? {} : opts.water) : await photoMaterial(opts);
   renderer.render(scene, cam);
   const tiles = [];
   for (let ty = 0; ty < N; ty++) {

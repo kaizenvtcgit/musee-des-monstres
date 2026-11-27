@@ -23,6 +23,17 @@ const HABITATS = {
   dark: { id: 'Tiles093', repeat: 2, tint: 0xb6aec4, normalScale: 1.6 },
   forest: { id: 'Ground037', repeat: 2, tint: 0xc8dcb0, normalScale: 1.4 },
   ice: { id: 'Snow013', repeat: 1, tint: 0xe4eefa, normalScale: 1.6, envMapIntensity: 0.5 },
+  // the second and third habitat of each monster
+  ash: { id: 'Ground110', repeat: 2, tint: 0x8c8884, normalScale: 1.5 },
+  basalt: { id: 'Ground111', repeat: 1, tint: 0xd8b48c, normalScale: 1.4 },
+  reef: { water: { deep: [22, 104, 112], light: [62, 150, 148], waves: 5 } },
+  abyss: { water: { deep: [4, 12, 28], light: [12, 30, 52], waves: 4, sky: 0.3 } },
+  swamp: { water: { deep: [34, 42, 26], light: [70, 78, 46], waves: 3, sky: 0.5 } },
+  graveyard: { id: 'Ground071', repeat: 2, tint: 0x9e9a8a, normalScale: 1.4 },
+  ruins: { id: 'PavingStones138', repeat: 2, tint: 0xc8c4b4, normalScale: 1.5 },
+  crystal: { id: 'Rock012', repeat: 2, tint: 0x9088a8, normalScale: 1.6 },
+  tundra: { id: 'Snow015', repeat: 2, normalScale: 1.4 },
+  summit: { id: 'Snow008A', repeat: 1, tint: 0xd9e2ee, normalScale: 2.4, envMapIntensity: 0.3 },
 };
 
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(HABITATS);

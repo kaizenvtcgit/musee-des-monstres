@@ -6,7 +6,7 @@ import { createRng } from '../../src/sim/rng.js';
 
 describe('config', () => {
   it('every species habitat is one of the 5 habitats', () => {
-    expect(HABITATS).toHaveLength(5);
+    expect(HABITATS).toHaveLength(15);
     for (const s of Object.values(SPECIES)) expect(HABITATS).toContain(s.habitat);
     expect(Object.keys(SPECIES)).toHaveLength(5);
   });

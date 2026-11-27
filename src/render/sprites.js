@@ -15,7 +15,7 @@ export const RARE_FALLBACK_TINT = 0xffd36b;
 // Realistic ground tiles and buildings rendered in Blender (2x the in-game size).
 // Their file name is the procedural texture key they replace: tile-grass.png, bld-snack.png...
 // Enclosure decorations (scripts/render-model/render-decor.mjs): "decor-<id>-<variant>.png".
-const decor = import.meta.glob(['../assets/tiles/*.{png,webp}', '../assets/buildings/*.{png,webp}', '../assets/decor/*.png'], { eager: true, query: '?url', import: 'default' });
+const decor = import.meta.glob(['../assets/tiles/*.{png,webp}', '../assets/buildings/*.{png,webp}', '../assets/decor/*.{png,webp}'], { eager: true, query: '?url', import: 'default' });
 export const DECOR_URLS = Object.fromEntries(
   Object.entries(decor).map(([path, url]) => [path.split('/').pop().replace(/\.(png|webp)$/, ''), url]),
 );
@@ -120,6 +120,8 @@ export function preloadSprites(scene) {
   for (const [name, url] of Object.entries(DECOR_URLS)) {
     // habitat grounds: one sheet of 4 x 4 tiles (128 x 64 px each) per habitat
     if (name.endsWith('-sheet')) scene.load.spritesheet(`img-${name}`, url, { frameWidth: 128, frameHeight: 64 });
+    // all the enclosure decorations in one image (scripts/render-model/render-decor.mjs)
+    else if (name === 'decor-atlas') scene.load.spritesheet(`img-${name}`, url, { frameWidth: 128, frameHeight: 192 });
     else scene.load.image(`img-${name}`, url);
   }
   for (const [name, url] of Object.entries(ANIM_URLS)) {

@@ -1,5 +1,5 @@
 import { BALANCE } from '../config/balance.js';
-import { LOCATIONS, SPECIES } from '../config/species.js';
+import { LOCATIONS, SPECIES, habitatFits } from '../config/species.js';
 import { createMonster } from './monsters.js';
 import { enclosureCenter } from './staff.js';
 import { capacity } from './breeding.js';
@@ -103,7 +103,7 @@ export class Hatchery {
 }
 
 export function placeMonsterInEnclosure(monster, enclosure) {
-  if (SPECIES[monster.speciesId].habitat !== enclosure.habitat) return { ok: false, reason: 'wrongHabitat' };
+  if (!habitatFits(monster.speciesId, enclosure.habitat)) return { ok: false, reason: 'wrongHabitat' };
   if (enclosure.monsterIds.length && enclosure.speciesId && enclosure.speciesId !== monster.speciesId) {
     return { ok: false, reason: 'otherSpecies' };
   }

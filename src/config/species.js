@@ -1,4 +1,21 @@
-export const HABITATS = ['lava', 'water', 'dark', 'forest', 'ice'];
+// Each monster can live in the three habitats of its family (its home habitat and two others).
+export const HABITATS = [
+  'lava', 'water', 'dark', 'forest', 'ice',
+  'ash', 'basalt', 'reef', 'abyss', 'swamp', 'graveyard', 'ruins', 'crystal', 'tundra', 'summit',
+];
+export const HABITAT_FAMILY = {
+  lava: 'lava', ash: 'lava', basalt: 'lava',
+  water: 'water', reef: 'water', abyss: 'water',
+  dark: 'dark', swamp: 'dark', graveyard: 'dark',
+  forest: 'forest', ruins: 'forest', crystal: 'forest',
+  ice: 'ice', tundra: 'ice', summit: 'ice',
+};
+export const HABITAT_FAMILIES = ['lava', 'water', 'dark', 'forest', 'ice'];
+export const habitatsOfFamily = (family) => HABITATS.filter((h) => HABITAT_FAMILY[h] === family);
+// How much more the visitors like a monster shown in this habitat (the rarer ones impress more).
+export const HABITAT_APPEAL = { ash: 1.05, basalt: 1.1, reef: 1.1, abyss: 1.2, swamp: 1.05, graveyard: 1.1, ruins: 1.1, crystal: 1.2, tundra: 1.05, summit: 1.1 };
+// Can this species live in this habitat?
+export const habitatFits = (speciesId, habitat) => !!SPECIES[speciesId] && HABITAT_FAMILY[habitat] === SPECIES[speciesId].habitat;
 
 export const SPECIES = {
   dragonnet: { id: 'dragonnet', habitat: 'lava', minArea: 6, appeal: 10, decayPerMin: 6, special: 'hotTemper' },

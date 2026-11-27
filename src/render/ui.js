@@ -1,7 +1,7 @@
 import './ui.css';
 import { t } from '../i18n/index.js';
 import { BALANCE } from '../config/balance.js';
-import { SPECIES, LOCATIONS, HABITATS } from '../config/species.js';
+import { SPECIES, LOCATIONS, HABITATS, HABITAT_FAMILIES, habitatsOfFamily } from '../config/species.js';
 import { ENCLOSURE_DECOR, decorForHabitat } from '../config/decor.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { resolveMonsterTexture, realKey, visitorLook } from './sprites.js';
@@ -72,8 +72,9 @@ class UI {
   bindScene(scene) {
     this.scene = scene;
     this.renderToolbar();
-    this.el('habitats').innerHTML = HABITATS.map((h) => `
-      <button data-habitat="${h}"><img src="${this.img(`tile-${h}`)}" width="40"><small>${esc(t(`habitat.${h}`))}</small></button>`).join('');
+    // habitats grouped by the monster that lives there
+    this.el('habitats').innerHTML = HABITAT_FAMILIES.map((f) => `<div class="group"><h4>${esc(this.familySpecies(f))}</h4>
+      ${habitatsOfFamily(f).map((h) => `<button data-habitat="${h}"><img src="${this.img(`tile-${h}`)}" width="40"><small>${esc(t(`habitat.${h}`))}</small></button>`).join('')}</div>`).join('');
     this.renderDecorPicker();
     this.setTool({ type: 'select' });
     this.refresh(true);
@@ -132,7 +133,7 @@ class UI {
     this.el('habitats').classList.toggle('open', tool.type === 'pickHabitat' || tool.type === 'enclosure');
     for (const b of this.el('habitats').querySelectorAll('button')) b.classList.toggle('active', b.dataset.habitat === tool.habitat);
     let hint = null;
-    if (tool.type === 'placeMonster') hint = t('hatchery.pickEnclosure', { habitat: t(`habitat.${tool.habitat}`).toLowerCase() });
+    if (tool.type === 'placeMonster') hint = t('hatchery.pickEnclosure', { habitat: this.habitatNames(tool.habitat).toLowerCase() });
     if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
     this.hint(hint);
   }
@@ -158,24 +159,43 @@ class UI {
       <button data-decor="${id}" title="${esc(t('decor.enclosureHelp'))}">
         <img src="${this.decorImg(id)}"><small>${esc(t(`decor.${id}`))}</small><small class="price">${esc(t('tool.price', { n: ENCLOSURE_DECOR[id].price }))}</small>
       </button>`;
+    // a tab per monster family, then its three habitats with their decorations
+    this.decorFamily ??= 'lava';
+    const tabs = HABITAT_FAMILIES.map((f) => `<button data-family="${f}" class="${f === this.decorFamily ? 'active' : ''}">${esc(this.familySpecies(f))}</button>`).join('');
     this.el('decors').innerHTML = `
-      <div class="group"><h4>${esc(t('decor.garden'))}</h4>
-        <button data-garden title="${esc(t('decor.gardenHelp'))}"><img src="${this.img('decoration')}"><small>${esc(t('decor.garden'))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.decorationCost }))}</small></button>
-      </div>
-      ${HABITATS.map((h) => `<div class="group"><h4>${esc(t(`habitat.${h}`))}</h4>${decorForHabitat(h).map((d) => item(d.id)).join('')}</div>`).join('')}`;
+      <div class="tabs">${tabs}</div>
+      <div class="cols">
+        <div class="group"><h4>${esc(t('decor.garden'))}</h4>
+          <button data-garden title="${esc(t('decor.gardenHelp'))}"><img src="${this.img('decoration')}"><small>${esc(t('decor.garden'))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.decorationCost }))}</small></button>
+        </div>
+        ${habitatsOfFamily(this.decorFamily).map((h) => `<div class="group"><h4>${esc(t(`habitat.${h}`))}</h4>${decorForHabitat(h).map((d) => item(d.id)).join('')}</div>`).join('')}
+      </div>`;
+  }
+
+  // "Lave, Champ de cendres ou Canyon de basalte": the habitats of a family.
+  habitatNames(family) {
+    const names = habitatsOfFamily(family).map((h) => t(`habitat.${h}`));
+    return `${names.slice(0, -1).join(', ')} ${t('habitat.or')} ${names.at(-1)}`;
+  }
+
+  // Name of the monster living in a habitat family ("Dragonnet" for lava).
+  familySpecies(family) {
+    const sp = Object.values(SPECIES).find((s) => s.habitat === family);
+    return sp ? t(`species.${sp.id}`) : t(`habitat.${family}`);
   }
 
   // Icon of a decoration: its first image, cropped around the object.
   decorImg(id) {
-    const key = `img-decor-${id}-0`;
-    if (!this.scene.textures.exists(key)) return '';
+    const key = `decor-${id}`;
+    const atlas = 'img-decor-atlas';
+    if (!this.scene.textures.exists(atlas)) return '';
     if (!this.imgCache.has(key)) {
-      // crop a square around the visible pixels of the image
-      const src = this.scene.textures.get(key).getSourceImage();
+      // its first image in the atlas, cropped to a square around the visible pixels
+      const f = this.scene.textures.getFrame(atlas, Object.keys(ENCLOSURE_DECOR).indexOf(id) * 2);
       const full = document.createElement('canvas');
-      full.width = src.width; full.height = src.height;
+      full.width = f.cutWidth; full.height = f.cutHeight;
       const g = full.getContext('2d', { willReadFrequently: true });
-      g.drawImage(src, 0, 0);
+      g.drawImage(f.source.image, f.cutX, f.cutY, f.cutWidth, f.cutHeight, 0, 0, f.cutWidth, f.cutHeight);
       const a = g.getImageData(0, 0, full.width, full.height).data;
       let x0 = full.width, y0 = full.height, x1 = 0, y1 = 0;
       for (let y = 0; y < full.height; y++) {
@@ -196,6 +216,11 @@ class UI {
   onDecor(e) {
     const btn = e.target.closest('button');
     if (!btn) return;
+    if (btn.dataset.family) {
+      this.decorFamily = btn.dataset.family;
+      this.renderDecorPicker();
+      return;
+    }
     if (btn.dataset.garden !== undefined) this.setTool({ type: 'decoration' });
     else this.setTool({ type: 'decor', decor: btn.dataset.decor, habitat: ENCLOSURE_DECOR[btn.dataset.decor].habitat });
   }
@@ -294,7 +319,7 @@ class UI {
           <button data-action="catch" data-id="${m.id}">${esc(t('monster.catch'))}</button>`;
       }
       return `${close}<h3><img class="portrait" src="${this.img(resolveMonsterTexture(this.scene, m).key)}">${esc(this.monsterName(m))}</h3>
-        <div class="row">${esc(t('monster.habitat', { h: t(`habitat.${SPECIES[m.speciesId].habitat}`) }))}</div>
+        <div class="row">${esc(t('monster.habitat', { h: this.habitatNames(SPECIES[m.speciesId].habitat) }))}</div>
         <div class="row">${esc(t('monster.happiness', { n: Math.round(m.happiness) }))}${bar(m.happiness)}</div>
         <div class="row">${esc(t('monster.hunger', { n: Math.round(m.hunger) }))}${bar(m.hunger, true)}</div>
         ${body}

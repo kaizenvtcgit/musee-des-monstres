@@ -35,6 +35,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 - **Clic gauche** : utiliser l'outil choisi (glisser pour tracer une allée ou un enclos).
 - **Clic droit, ou glisser avec l'outil Sélection** : déplacer la vue. **Molette** : zoomer. **Échap** : annuler l'outil.
 - Clique sur la **tente** pour lancer une expédition, puis sur la **couveuse** pour placer le monstre né.
+- **Habitats** : chaque monstre peut vivre dans 3 habitats (ex. le dragonnet : lave, champ de cendres, canyon de basalte), avec chacun son sol et ses 3 décorations. Varier les habitats fait monter la réputation ; certains (abysses, grotte de cristal) attirent davantage les visiteurs.
 - **Décoration** : le jardin (sur l'herbe, rend les visiteurs heureux) ou 3 décorations par habitat, à placer dans un enclos du bon habitat : monstres plus heureux, visiteurs plus attirés (les 4 premières comptent).
 - Un monstre malheureux s'évade : clique dessus pour l'attraper, ou embauche des gardiens.
 - La partie est **sauvegardée automatiquement** dans le navigateur (toutes les 20 secondes et quand on quitte la page) et reprend à la réouverture. Le bouton **Nouvelle partie** (deux clics) efface la sauvegarde.
@@ -55,7 +56,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 ## Crédits
 
 - Décorations d'enclos : modèles 3D de [Poly Haven](https://polyhaven.com) (licence CC0).
-- Sols des enclos : textures photo de [ambientCG](https://ambientcg.com) (Lava003, Tiles093, Ground037, Snow013 — licence CC0).
+- Sols des enclos : textures photo de [ambientCG](https://ambientcg.com) (Lava003, Tiles093, Ground037, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A — licence CC0).
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - `docs/` : document de conception et plan de construction.
 

@@ -89,6 +89,34 @@ describe('enclosure decorations', () => {
 describe('low decorations', () => {
   it('the small plants and logs can be walked over, the big pieces cannot', () => {
     const low = Object.values(ENCLOSURE_DECOR).filter((d) => d.low).map((d) => d.id).sort();
-    expect(low).toEqual(['deadTrunk', 'fern', 'glowMushrooms', 'mossStump', 'reeds']);
+    expect(low).toEqual([
+      'anemones', 'deadTrunk', 'emberPile', 'fern', 'frozenShrub', 'frozenStump', 'glowMushrooms', 'jellyfish',
+      'mossStump', 'reeds', 'roots', 'rottenTrunk', 'wisps',
+    ]);
+  });
+});
+
+describe('habitat families', () => {
+  it('each monster can live in the three habitats of its family, and is happy there', async () => {
+    const { habitatsOfFamily, habitatFits, SPECIES: S } = await import('../../src/config/species.js');
+    const { placeMonsterInEnclosure } = await import('../../src/sim/expeditions.js');
+    for (const sp of Object.values(S)) {
+      const homes = habitatsOfFamily(sp.habitat);
+      expect(homes).toHaveLength(3);
+      for (const h of homes) {
+        const enc = { id: 'e', habitat: h, x0: 0, y0: 0, x1: 4, y1: 4, area: 25, monsterIds: [], speciesId: null, decor: [] };
+        const m = createMonster(sp.id);
+        expect(placeMonsterInEnclosure(m, enc).ok).toBe(true);
+        expect(targetHappiness(m, enc, 0)).toBe(100);
+      }
+      expect(habitatFits(sp.id, sp.habitat === 'lava' ? 'reef' : 'ash')).toBe(false);
+    }
+  });
+
+  it('showing monsters in different habitats raises the reputation', async () => {
+    const { computeReputation } = await import('../../src/sim/reputation.js');
+    const base = { avgSatisfaction: 0.5, speciesCount: 2, escapesLast5Min: 0 };
+    expect(computeReputation({ ...base, habitatVariety: 1 })).toBeCloseTo(computeReputation(base));
+    expect(computeReputation({ ...base, habitatVariety: 4 })).toBeCloseTo(computeReputation(base) + 0.3);
   });
 });
