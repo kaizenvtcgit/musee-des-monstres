@@ -71,6 +71,20 @@ export class MonsterFX {
       g.fillRect(0, 0, 128, 128);
       c.refresh();
     }
+    if (!tex.exists('fx-eyes')) {
+      // two small glowing eyes (tinted per monster), for a monster hidden in the dark of its shelter
+      const c = tex.createCanvas('fx-eyes', 20, 8);
+      const g = c.getContext();
+      for (const x of [5, 15]) {
+        const grad = g.createRadialGradient(x, 4, 0, x, 4, 4);
+        grad.addColorStop(0, 'rgba(255,255,255,1)');
+        grad.addColorStop(0.4, 'rgba(255,255,255,0.7)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = grad;
+        g.fillRect(x - 4, 0, 8, 8);
+      }
+      c.refresh();
+    }
     if (!tex.exists('fx-glow')) {
       // faint cold light on the ground (an ellipse seen in perspective), instead of a dark shadow
       const c = tex.createCanvas('fx-glow', 96, 48);
@@ -345,8 +359,19 @@ export class MonsterFX {
     return dy;
   }
 
+  // Eyes glowing in the dark of a shelter, at (x, y), `alpha` 0 to hide them.
+  shelterEyes(entry, x, y, alpha, tint) {
+    if (alpha <= 0.01) {
+      if (entry.eyes) entry.eyes.setVisible(false);
+      return;
+    }
+    if (!entry.eyes) entry.eyes = this.scene.add.image(0, 0, 'fx-eyes').setBlendMode('ADD');
+    entry.eyes.setVisible(true).setPosition(x, y).setDepth(y + 20).setTint(tint).setAlpha(alpha).setScale(0.8);
+  }
+
   // The monster is no longer drawn (caught and put in the hatchery...): vanish and free its effects.
   remove(entry) {
+    if (entry.eyes) entry.eyes.destroy();
     if (entry.ghostState !== undefined) this.vanish(entry, entry.lastScreen);
     if (entry.xfade) entry.xfade.destroy();
     if (entry.glow) entry.glow.destroy();

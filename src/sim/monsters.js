@@ -33,15 +33,50 @@ export function targetHappiness(monster, enclosure, watchers) {
   const habitatFactor = habitatFits(monster.speciesId, enclosure.habitat) ? 1 : 0.3;
   const count = Math.max(1, enclosure.monsterIds ? enclosure.monsterIds.length : 1);
   const sizeFactor = Math.min(1, enclosure.area / (sp.minArea * count));
-  const decor = decorCount(enclosure) * BALANCE.decorHappiness;
+  const decor = decorCount(enclosure) * BALANCE.decorHappiness + (enclosure?.shelter ? BALANCE.shelterHappiness : 0);
   return clamp(100 * habitatFactor * sizeFactor + decor - monster.hunger * 0.5, 0, 100);
+}
+
+// The shelter of an enclosure: now and then a monster takes refuge in it, alone, for a while: hidden inside
+// ('inside') or resting at the entrance ('entrance'). More often, and more often hidden, when it is stressed
+// (unhappy, or many visitors watching). `rng` is the world's, so a saved game goes on the same way.
+export function updateShelter(monster, enclosure, watchers, dt, rng, monsters) {
+  const sh = enclosure?.shelter;
+  if (!sh) {
+    monster.shelter = null;
+    return;
+  }
+  // free the shelter if its occupant is gone (escaped, moved, sold...)
+  if (sh.occupant) {
+    const o = monsters.get(sh.occupant);
+    if (!o || o.state !== 'enclosed' || o.enclosureId !== enclosure.id || !o.shelter) sh.occupant = null;
+  }
+  if (monster.shelter) {
+    monster.shelterLeft -= dt;
+    if (monster.shelterLeft > 0) return;
+    monster.shelter = null;
+    sh.occupant = null;
+    const [a, b] = BALANCE.shelterCooldown;
+    monster.shelterCooldown = a + rng() * (b - a);
+    return;
+  }
+  if (sh.occupant) return;
+  monster.shelterCooldown = (monster.shelterCooldown ?? rng() * 20) - dt;
+  if (monster.shelterCooldown > 0) return;
+  const stressed = monster.happiness < 50 || watchers >= 4;
+  if (rng() >= (stressed ? 1 / 15 : 1 / 50) * dt) return;
+  monster.shelter = rng() < (stressed ? 0.75 : 0.4) ? 'inside' : 'entrance';
+  const [a, b] = BALANCE.shelterStay;
+  monster.shelterLeft = a + rng() * (b - a);
+  sh.occupant = monster.id;
 }
 
 export function updateMonster(monster, enclosure, watchers, dt) {
   const sp = SPECIES[monster.speciesId];
   monster.hunger = clamp(monster.hunger + (BALANCE.hungerPerMin * dt) / 60, 0, 100);
   const target = targetHappiness(monster, enclosure, watchers);
-  const step = (sp.decayPerMin * dt) / 60;
+  // hidden in its shelter, it recovers twice as fast
+  const step = ((sp.decayPerMin * dt) / 60) * (monster.shelter === 'inside' && monster.happiness < target ? 2 : 1);
   if (monster.happiness < target) monster.happiness = Math.min(target, monster.happiness + step);
   else monster.happiness = Math.max(target, monster.happiness - step);
   if (sp.special === 'lovesVisitors' && watchers >= 3) monster.happiness += (5 * dt) / 60;

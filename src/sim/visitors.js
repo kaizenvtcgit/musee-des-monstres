@@ -118,7 +118,11 @@ function enclosureAppeal(e, ctx) {
   let total = null;
   for (const id of e.monsterIds) {
     const m = ctx.monsters.get(id);
-    if (m && m.state === 'enclosed') total = (total || 0) + appeal(m);
+    // hidden in its shelter it is not seen; resting at the entrance, a little less
+    if (m && m.state === 'enclosed') {
+      const seen = m.shelter === 'inside' ? 0 : m.shelter === 'entrance' ? BALANCE.shelterEntranceAppeal : 1;
+      total = (total || 0) + appeal(m) * seen;
+    }
   }
   return total === null ? null : total * (1 + decorCount(e) * BALANCE.decorAppeal) * (HABITAT_APPEAL[e.habitat] ?? 1);
 }

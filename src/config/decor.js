@@ -52,4 +52,9 @@ export const ENCLOSURE_DECOR = {
   expeditionFlag: { id: 'expeditionFlag', habitat: 'summit', price: 150 },
 };
 
+// The shelter of each monster family (2 x 2 tiles), image src/assets/decor/shelter-<family>.png.
+export const SHELTERS = {
+  lava: 'volcanicLair', water: 'seaCave', dark: 'mausoleum', forest: 'mossMound', ice: 'iceCave',
+};
+
 export const decorForHabitat = (habitat) => Object.values(ENCLOSURE_DECOR).filter((d) => d.habitat === habitat);

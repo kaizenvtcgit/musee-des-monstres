@@ -1,5 +1,6 @@
 import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
+import { HABITAT_FAMILY } from '../config/species.js';
 
 const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
@@ -61,12 +62,37 @@ export class Builder {
     if (!e) return fail('notInEnclosure');
     if (e.habitat !== def.habitat) return fail('wrongDecorHabitat');
     e.decor ??= [];
-    if (e.decor.some((d) => d.tx === tx && d.ty === ty)) return fail('occupied');
+    if (e.decor.some((d) => d.tx === tx && d.ty === ty) || this.shelterAt(tx, ty)) return fail('occupied');
     if (!this.wallet.spend(def.price)) return fail('noMoney');
     const id = `dec${this.nextId++}`;
     e.decor.push({ id, type, tx, ty, price: def.price });
     this.grid.version++; // redraw
     return { ok: true, id, enclosureId: e.id };
+  }
+
+  // A shelter (cave, mausoleum... see SHELTERS) on 2 x 2 tiles of an enclosure, from (tx, ty) to (tx + 1, ty + 1);
+  // one per enclosure. Its entrance faces +y (down-left on screen).
+  placeShelter(tx, ty) {
+    const tile = this.grid.getTile(tx, ty);
+    if (!tile) return fail('outOfBounds');
+    const e = tile.occupant && this.enclosures.get(tile.occupant);
+    if (!e) return fail('notInEnclosure');
+    if (e.shelter) return fail('hasShelter');
+    if (e.area < BALANCE.shelterMinArea) return fail('enclosureTooSmall');
+    if (tx + 1 > e.x1 || ty + 1 > e.y1) return fail('shelterOutside');
+    for (const d of e.decor ?? []) if (d.tx >= tx && d.tx <= tx + 1 && d.ty >= ty && d.ty <= ty + 1) return fail('occupied');
+    if (!this.wallet.spend(BALANCE.shelterCost)) return fail('noMoney');
+    e.shelter = { id: `she${this.nextId++}`, family: HABITAT_FAMILY[e.habitat], tx, ty, price: BALANCE.shelterCost, occupant: null };
+    this.grid.version++; // redraw
+    return { ok: true, id: e.shelter.id, enclosureId: e.id };
+  }
+
+  // The shelter covering this tile, with its enclosure, or null.
+  shelterAt(tx, ty) {
+    const tile = this.grid.getTile(tx, ty);
+    const e = tile && tile.occupant && this.enclosures.get(tile.occupant);
+    const s = e && e.shelter;
+    return s && tx >= s.tx && tx <= s.tx + 1 && ty >= s.ty && ty <= s.ty + 1 ? { shelter: s, enclosure: e } : null;
   }
 
   // The decoration on this tile, with its enclosure, or null.
@@ -103,13 +129,20 @@ export class Builder {
       this.grid.version++;
       return { ok: true, id: found.decor.id };
     }
+    const sheltered = this.shelterAt(tx, ty);
+    if (sheltered) {
+      sheltered.enclosure.shelter = null; // its occupant comes out (updateShelter)
+      this.wallet.earn(sheltered.shelter.price * BALANCE.demolishRefund);
+      this.grid.version++;
+      return { ok: true, id: sheltered.shelter.id };
+    }
     if (id && this.enclosures.has(id)) {
       const e = this.enclosures.get(id);
       if (e.monsterIds.length && !this.onEnclosureEmptied([...e.monsterIds])) return fail('enclosureNotEmpty');
       e.monsterIds = [];
       this.enclosures.delete(id);
       this.#fillRect(e.x0, e.y0, e.x1, e.y1, null);
-      const decorPrice = (e.decor ?? []).reduce((s, d) => s + d.price, 0);
+      const decorPrice = (e.decor ?? []).reduce((s, d) => s + d.price, 0) + (e.shelter?.price ?? 0);
       this.wallet.earn((e.price + decorPrice) * BALANCE.demolishRefund);
       return { ok: true, id };
     }

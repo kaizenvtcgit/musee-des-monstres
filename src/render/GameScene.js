@@ -8,6 +8,7 @@ import {
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { MonsterFX } from './monsterfx.js';
+import { BALANCE } from '../config/balance.js';
 import { Sounds } from './sound.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
 import { HABITAT_FAMILY, habitatFits } from '../config/species.js';
@@ -20,6 +21,14 @@ const DECOR_IDS = Object.keys(ENCLOSURE_DECOR); // order of the cells of the dec
 const DECOR_IMG = { w: 128, h: 192, groundY: 150 };
 const DECOR_VARIANTS = 2;
 const DECOR_RADIUS = 0.32;
+// Shelter images (scripts/render-model/render-decor.mjs: SHELTER_FRAME): size and ground row of the centre of
+// its 2 x 2 tiles; SHELTER_RADIUS: room it takes for the monsters; SHELTER_ENTRANCE: where the entrance is
+// (tile y of the monster resting in it, from the shelter's first tile).
+const SHELTER_IMG = { w: 288, h: 320, groundY: 230 };
+const SHELTER_RADIUS = 0.8;
+const SHELTER_ENTRANCE = 1.15;
+// Colour of the eyes glowing in the dark of a shelter.
+const EYES = { dragonnet: 0xffa040, kraken: 0xfff070, spectre: 0x9fe6ff, golem: 0xffc850, yeti: 0x8fd0ff };
 // Habitat grounds repeat every GROUND_BLOCK tiles.
 const GROUND_BLOCK = 4;
 // Display scale of the 3D people (128 px frames) and how long a happy visitor waves (game seconds).
@@ -295,6 +304,13 @@ export class GameScene extends Phaser.Scene {
     this.decorSprites = [];
     this.decorSmoke = [];
     for (const e of this.world.builder.enclosures.values()) {
+      const sh = e.shelter;
+      if (sh && this.textures.exists(`img-shelter-${sh.family}`)) {
+        // centre of its 2 x 2 tiles; drawn a little in front so a monster just behind it is hidden by it
+        const c = tileToScreen(sh.tx + 0.5, sh.ty + 0.5);
+        this.decorSprites.push(this.add.image(c.x, c.y, `img-shelter-${sh.family}`)
+          .setOrigin(0.5, SHELTER_IMG.groundY / SHELTER_IMG.h).setDisplaySize(SHELTER_IMG.w / 2, SHELTER_IMG.h / 2).setDepth(c.y + 8));
+      }
       for (const d of e.decor ?? []) {
         // the variant (turned differently) is picked from the tile, so it never changes
         const v = (d.tx * 7 + d.ty * 13) % DECOR_VARIANTS;
@@ -329,13 +345,34 @@ export class GameScene extends Phaser.Scene {
       const o = this.entitySprites.get(id);
       if (o && o.w && o.wEnc === e.id) others.push(o.w);
     }
-    // big decorations are obstacles too (the low ones are walked over)
+    // big decorations are obstacles too (the low ones are walked over), and the shelter
     for (const d of e.decor ?? []) if (!ENCLOSURE_DECOR[d.type]?.low) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
+    const sh = e.shelter;
+    if (sh) others.push({ x: sh.tx + 0.5, y: sh.ty + 0.5, r: SHELTER_RADIUS });
     if (!entry.w || entry.wEnc !== e.id) {
       entry.wEnc = e.id;
       const fx = monsterFx(m.speciesId);
       entry.w = createWanderer(findFreeSpot(bounds, others, r, Math.random), r, { speed: fx.walkSpeed, pause: fx.restRange });
       entry.w.rest = Math.random() * 3;
+    }
+    entry.atShelter = false;
+    if (sh && m.shelter) {
+      // taking refuge: straight to the entrance of the shelter, then stays there
+      const w = entry.w;
+      const gx = sh.tx + 0.5, gy = sh.ty + SHELTER_ENTRANCE;
+      const d = Math.hypot(gx - w.x, gy - w.y);
+      const step = (w.speed ?? 0.7) * dt;
+      if (d > step) {
+        w.x += ((gx - w.x) / d) * step;
+        w.y += ((gy - w.y) / d) * step;
+      } else {
+        w.x = gx;
+        w.y = gy;
+        entry.atShelter = true;
+      }
+      w.goal = null;
+      w.rest = 1 + Math.random(); // when it comes out, a short pause before walking away
+      return { x: w.x, y: w.y };
     }
     stepWander(entry.w, others, bounds, dt, Math.random);
     return { x: entry.w.x, y: entry.w.y };
@@ -469,6 +506,11 @@ export class GameScene extends Phaser.Scene {
           if (walking) {
             entry.actionQueue = null;
             entry.escKind = null;
+          } else if (m.shelter && entry.atShelter) {
+            // in its shelter, facing out: asleep at the entrance (or just resting), or hidden inside
+            entry.dir = 0;
+            kind = m.shelter === 'entrance' && this.anims.exists(`${anim}-sleep-d0`) ? 'sleep' : 'idle';
+            entry.actionQueue = null;
           } else if (m.state === 'escaped' && fx.escapedKinds) {
             // each time it stops while escaped, it picks one of its threatening moves
             entry.escKind ??= fx.escapedKinds[Math.floor(Math.random() * fx.escapedKinds.length)];
@@ -509,10 +551,17 @@ export class GameScene extends Phaser.Scene {
       // no shadow on the water under a swimming monster, nor under a ghost
       entry.shadow.setVisible(!swimming && !fx.spectral);
       entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
+      // hidden in its shelter: it fades into the dark, only its eyes still glow
+      const hidden = m.shelter === 'inside' && entry.atShelter ? 0 : 1;
+      entry.hideK = (entry.hideK ?? 1) + (hidden - (entry.hideK ?? 1)) * (1 - Math.exp(-dtReal * 4));
+      entry.shadow.setAlpha(entry.hideK);
       if (fx.spectral || fx.crossfadeMs) {
         const alpha = fx.spectral ? this.fx.spectral(m, entry, p, time, dt, time < (entry.walkUntil || 0)) : 1;
-        this.fx.applyCrossfade(entry, fx.crossfadeMs ?? 1, alpha);
-      }
+        this.fx.applyCrossfade(entry, fx.crossfadeMs ?? 1, alpha * entry.hideK);
+      } else entry.sprite.setAlpha(entry.hideK);
+      const eyes = Math.max(0, 1 - entry.hideK / 0.35);
+      const blink = Math.sin(time * 0.0013 + entry.phase * 3) > -0.93 ? 1 : 0;
+      this.fx.shelterEyes(entry, p.x, p.y - 13, eyes * blink, EYES[m.speciesId] ?? 0xffe080);
       if (fx.glow && sheetKind) {
         this.fx.glowLayer(entry, m, anim, sheetKind === 'sitdown' ? 'wakeup' : sheetKind, heavyKind, fx, time, dtReal, entry.actionProgress ?? 0);
       }
@@ -714,6 +763,9 @@ export class GameScene extends Phaser.Scene {
       case 'decor':
         this.report(b.placeDecor(tile.tx, tile.ty, this.tool.decor));
         break;
+      case 'shelter':
+        this.report(b.placeShelter(tile.tx, tile.ty));
+        break;
       case 'decoration':
       case 'snack':
       case 'souvenir':
@@ -819,6 +871,17 @@ export class GameScene extends Phaser.Scene {
       const t = grid.getTile(tile.tx, tile.ty);
       diamondAt(tile.tx, tile.ty, false);
       if (!t.occupant && t.ground !== 'path') g.clear();
+      return;
+    }
+    if (type === 'shelter') {
+      // its 2 x 2 tiles from the pointed one
+      const t = grid.getTile(tile.tx, tile.ty);
+      const enc = t.occupant && this.world.builder.enclosures.get(t.occupant);
+      const ok = !!enc && HABITAT_FAMILY[enc.habitat] === this.tool.family && !enc.shelter
+        && enc.area >= BALANCE.shelterMinArea && tile.tx + 1 <= enc.x1 && tile.ty + 1 <= enc.y1;
+      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        if (grid.inBounds(tile.tx + dx, tile.ty + dy)) diamondAt(tile.tx + dx, tile.ty + dy, ok);
+      }
       return;
     }
     if (type === 'decor') {

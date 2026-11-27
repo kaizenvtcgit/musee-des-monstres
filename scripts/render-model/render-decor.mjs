@@ -16,6 +16,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const MODELS = path.join(ROOT, 'models/decor');
 const OUT = path.join(ROOT, 'src/assets/decor');
 const VARIANTS = [0, 140];
+// shelters: frame of 2 x 2 tiles (keep in sync with SHELTER_IMG in GameScene.js)
+const SHELTER_FRAME = [288, 320, 230];
+const SHELTER_LOOKS = {
+  // a photo-scanned rock stretched into a cave (dome: [width, height] in tiles), its mouth and some boulders
+  lava: { polyhaven: 'boulder_01', dome: [1.75, 0.95], tint: 0x3a3634, lava: 0.45, mouth: [0.6, 0.55, 'rgba(255,120,30,0.95)'], extra: 'lavaRing' },
+  water: { polyhaven: 'namaqualand_boulder_05', dome: [1.75, 1.0], tint: 0x8c8c88, mouth: [0.64, 0.6, 'rgba(10,50,60,0.95)'], extra: 'seaRing', waterline: 0.12 },
+  dark: { built: 'mausoleum', size: 1.75 },
+  forest: { polyhaven: 'rock_moss_set_02', largest: 1, dome: [1.75, 0.9], tint: 0xa8b894, mouth: [0.56, 0.5, 'rgba(40,30,15,0.95)'], extra: 'mossRing' },
+  ice: { polyhaven: 'namaqualand_boulder_04', dome: [1.75, 0.95], tint: 0xc8d8e8, snow: 1, mouth: [0.62, 0.56, 'rgba(30,70,110,0.95)'], extra: 'iceRing' },
+};
 const ATLAS_COLS = 10; // keep in sync with DECOR_ATLAS_COLS in GameScene.js
 
 // How each decoration looks. polyhaven: model id; built: object made in decor.html.
@@ -119,4 +129,13 @@ for (const id of Object.keys(ENCLOSURE_DECOR)) {
   console.log(`${id} done`);
 }
 writeFileSync(path.join(OUT, 'decor-atlas.webp'), Buffer.from((await page.evaluate(([u, c]) => window.packAtlas(u, c), [cells, ATLAS_COLS])).split(',')[1], 'base64'));
+
+// Shelters (one per monster family): 2 x 2 tiles, opening toward the viewer; src/assets/decor/shelter-<family>.png
+for (const [family, look] of Object.entries(SHELTER_LOOKS)) {
+  if (look.polyhaven) await download(look.polyhaven);
+  const model = look.polyhaven ? `/models/${look.polyhaven}/${look.polyhaven}.gltf` : undefined;
+  const url = await page.evaluate(([o]) => window.renderDecor(o, 0), [{ ...look, model, frame: SHELTER_FRAME }]);
+  writeFileSync(path.join(OUT, `shelter-${family}.png`), Buffer.from(url.split(',')[1], 'base64'));
+  console.log(`shelter ${family} done`);
+}
 await browser.close();

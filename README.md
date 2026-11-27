@@ -36,6 +36,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 - **Clic droit, ou glisser avec l'outil Sélection** : déplacer la vue. **Molette** : zoomer. **Échap** : annuler l'outil.
 - Clique sur la **tente** pour lancer une expédition, puis sur la **couveuse** pour placer le monstre né.
 - **Habitats** : chaque monstre peut vivre dans 3 habitats (ex. le dragonnet : lave, champ de cendres, canyon de basalte), avec chacun son sol et ses 3 décorations. Varier les habitats fait monter la réputation ; certains (abysses, grotte de cristal) attirent davantage les visiteurs.
+- **Abri** (dans le sélecteur Décoration) : antre volcanique, grotte sous-marine, mausolée, tertre moussu ou caverne de glace, sur 2 × 2 cases d'un enclos d'au moins 6 cases. Le monstre s'y réfugie de temps en temps (plus souvent s'il est stressé) : il se repose à l'entrée, ou s'y cache et on ne voit plus que ses yeux. Il y est plus heureux, mais caché il n'attire plus les visiteurs.
 - **Décoration** : le jardin (sur l'herbe, rend les visiteurs heureux) ou 3 décorations par habitat, à placer dans un enclos du bon habitat : monstres plus heureux, visiteurs plus attirés (les 4 premières comptent).
 - Un monstre malheureux s'évade : clique dessus pour l'attraper, ou embauche des gardiens.
 - La partie est **sauvegardée automatiquement** dans le navigateur (toutes les 20 secondes et quand on quitte la page) et reprend à la réouverture. Le bouton **Nouvelle partie** (deux clics) efface la sauvegarde.

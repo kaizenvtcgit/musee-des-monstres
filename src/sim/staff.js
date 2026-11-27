@@ -48,6 +48,7 @@ export function escapeMonster(monster, enclosure, grid) {
           monster.tile = { tx: x, ty: y };
           monster.wanderTarget = null;
           monster.pause = 0;
+          monster.shelter = null;
           return true;
         }
       }

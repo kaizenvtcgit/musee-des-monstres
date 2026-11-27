@@ -3,7 +3,7 @@ import { Grid } from './grid.js';
 import { Wallet } from './wallet.js';
 import { Builder } from './build.js';
 import { createRng } from './rng.js';
-import { createMonster, updateMonster, escapeChancePerSec, feed } from './monsters.js';
+import { createMonster, updateMonster, updateShelter, escapeChancePerSec, feed } from './monsters.js';
 import { createVisitor, updateVisitor, spawnIntervalSec } from './visitors.js';
 import { hireKeeper, escapeMonster, updateEscaped, updateKeeper, catchByClick } from './staff.js';
 import { ExpeditionBase, Hatchery, placeMonsterInEnclosure, createEgg } from './expeditions.js';
@@ -166,6 +166,7 @@ export class World {
       if (m.state === 'enclosed') {
         const e = this.builder.enclosures.get(m.enclosureId);
         updateMonster(m, e, watchers.get(e.id) || 0, dt);
+        updateShelter(m, e, watchers.get(e.id) || 0, dt, this.rng, this.monsters);
         if (this.rng() < escapeChancePerSec(m) * dt && escapeMonster(m, e, this.grid)) {
           this.escapeTimes.push(this.time);
           this.events.push({ type: 'escape', monsterId: m.id, speciesId: m.speciesId });

@@ -2,7 +2,7 @@ import './ui.css';
 import { t } from '../i18n/index.js';
 import { BALANCE } from '../config/balance.js';
 import { SPECIES, LOCATIONS, HABITAT_FAMILIES, offeredHabitatsOfFamily } from '../config/species.js';
-import { ENCLOSURE_DECOR, decorForHabitat } from '../config/decor.js';
+import { ENCLOSURE_DECOR, decorForHabitat, SHELTERS } from '../config/decor.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { resolveMonsterTexture, realKey, visitorLook } from './sprites.js';
 import { capacity, canBreed } from '../sim/breeding.js';
@@ -121,7 +121,7 @@ class UI {
   setTool(tool) {
     this.tool = tool;
     if (this.scene) this.scene.setTool(tool);
-    const DECOR_TOOLS = ['pickDecor', 'decor', 'decoration'];
+    const DECOR_TOOLS = ['pickDecor', 'decor', 'decoration', 'shelter'];
     let active = tool.type === 'enclosure' || tool.type === 'pickHabitat' ? 'enclosure' : tool.type;
     if (DECOR_TOOLS.includes(tool.type)) active = 'decoration';
     // the picker closes once a decoration is chosen, so it does not hide the map while placing it
@@ -134,6 +134,7 @@ class UI {
     for (const b of this.el('habitats').querySelectorAll('button')) b.classList.toggle('active', b.dataset.habitat === tool.habitat);
     let hint = null;
     if (tool.type === 'placeMonster') hint = t('hatchery.pickEnclosure', { habitat: this.habitatNames(tool.habitat).toLowerCase() });
+    if (tool.type === 'shelter') hint = t('shelter.hint', { name: t(`shelter.${SHELTERS[tool.family]}`), habitat: this.habitatNames(tool.family).toLowerCase() });
     if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
     this.hint(hint);
   }
@@ -167,6 +168,9 @@ class UI {
       <div class="cols">
         <div class="group"><h4>${esc(t('decor.garden'))}</h4>
           <button data-garden title="${esc(t('decor.gardenHelp'))}"><img src="${this.img('decoration')}"><small>${esc(t('decor.garden'))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.decorationCost }))}</small></button>
+        </div>
+        <div class="group"><h4>${esc(t('shelter.title'))}</h4>
+          <button data-shelter="${this.decorFamily}" title="${esc(t('shelter.help'))}"><img src="${this.shelterImg(this.decorFamily)}"><small>${esc(t(`shelter.${SHELTERS[this.decorFamily]}`))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.shelterCost }))}</small></button>
         </div>
         ${offeredHabitatsOfFamily(this.decorFamily).map((h) => `<div class="group"><h4>${esc(t(`habitat.${h}`))}</h4>${decorForHabitat(h).map((d) => item(d.id)).join('')}</div>`).join('')}
       </div>`;
@@ -213,9 +217,27 @@ class UI {
     return this.imgCache.get(key);
   }
 
+  // Icon of the shelter of a family, cropped around it.
+  shelterImg(family) {
+    const key = `img-shelter-${family}`;
+    if (!this.scene.textures.exists(key)) return '';
+    if (!this.imgCache.has(key)) {
+      const src = this.scene.textures.get(key).getSourceImage();
+      const c = document.createElement('canvas');
+      c.width = 200; c.height = 170;
+      c.getContext('2d').drawImage(src, 44, 90, 200, 170, 0, 0, 200, 170);
+      this.imgCache.set(key, c.toDataURL());
+    }
+    return this.imgCache.get(key);
+  }
+
   onDecor(e) {
     const btn = e.target.closest('button');
     if (!btn) return;
+    if (btn.dataset.shelter) {
+      this.setTool({ type: 'shelter', family: btn.dataset.shelter });
+      return;
+    }
     if (btn.dataset.family) {
       this.decorFamily = btn.dataset.family;
       this.renderDecorPicker();
@@ -339,7 +361,7 @@ class UI {
       if (!e) return null;
       const head = `${close}<h3><img class="portrait" src="${this.img(`tile-${e.habitat}`)}">${esc(t('tool.enclosure'))} ${esc(t(`habitat.${e.habitat}`))}</h3>
         <div class="row">${esc(t('enclosure.size', { n: e.area }))}</div>`;
-      if (!e.monsterIds.length) return `${head}<div class="row">${esc(t('enclosure.empty'))}</div>${this.decorRow(e)}`;
+      if (!e.monsterIds.length) return `${head}<div class="row">${esc(t('enclosure.empty'))}</div>${this.shelterRow(e)}${this.decorRow(e)}`;
       const max = capacity(e, e.speciesId);
       const list = e.monsterIds.map((id) => w.monsters.get(id)).filter(Boolean).map((m) => `
         <button data-action="open" data-id="${m.id}"><img src="${this.img(resolveMonsterTexture(this.scene, m).key)}">
@@ -352,7 +374,7 @@ class UI {
       } else if (e.monsterIds.length >= max) nest = `<div class="row">${esc(t('enclosure.nestFull'))}</div>`;
       else nest = `<div class="row">${esc(t('enclosure.nestWaiting'))}</div>`;
       return `${head}<div class="row">${esc(t('enclosure.places', { n: e.monsterIds.length, max }))}</div>
-        <div class="list">${list}</div>${nest}${this.decorRow(e)}`;
+        <div class="list">${list}</div>${nest}${this.shelterRow(e)}${this.decorRow(e)}`;
     }
 
     if (sel.kind === 'building' && sel.type === 'expeditionBase') {
@@ -416,6 +438,14 @@ class UI {
       this.selection = { kind: 'monster', id };
     }
     this.refresh(true);
+  }
+
+  // The shelter of an enclosure, and who is in it.
+  shelterRow(e) {
+    if (!e.shelter) return `<div class="row muted">${esc(t('enclosure.shelterNone'))}</div>`;
+    const m = e.shelter.occupant && this.world.monsters.get(e.shelter.occupant);
+    const who = m && m.shelter ? ` · ${esc(t(m.shelter === 'inside' ? 'shelter.inside' : 'shelter.entrance', { name: this.monsterName(m) }))}` : '';
+    return `<div class="row">${esc(t(`shelter.${SHELTERS[e.shelter.family]}`))} · ${esc(t('enclosure.shelterBonus', { h: BALANCE.shelterHappiness }))}${who}</div>`;
   }
 
   // Decorations of an enclosure and what they bring (only the first BALANCE.decorMaxCount count).
