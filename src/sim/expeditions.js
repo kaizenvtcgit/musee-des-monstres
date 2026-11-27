@@ -61,6 +61,8 @@ export class Hatchery {
   constructor() {
     this.eggs = [];
     this.stored = [];
+    // test mode (src/testmode.js): eggs hatch at once (still only when there is room)
+    this.instant = false;
   }
 
   addEgg(egg) {
@@ -72,6 +74,7 @@ export class Hatchery {
     const born = [];
     for (const egg of [...this.eggs]) {
       if (!egg.ready) {
+        if (this.instant) egg.remainingSec = 0;
         egg.remainingSec -= dt;
         if (egg.remainingSec <= 1e-9) {
           egg.remainingSec = 0;

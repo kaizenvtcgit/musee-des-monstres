@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { Wallet } from '../../src/sim/wallet.js';
 import { isTestMode } from '../../src/testmode.js';
 import { saveKey } from '../../src/save/storage.js';
-import { ExpeditionBase } from '../../src/sim/expeditions.js';
+import { ExpeditionBase, Hatchery } from '../../src/sim/expeditions.js';
+import { createMonster } from '../../src/sim/monsters.js';
+import { BALANCE } from '../../src/config/balance.js';
 
 describe('unlimited wallet (test mode)', () => {
   it('can always pay, and paying or salaries never lower the money', () => {
@@ -43,6 +45,34 @@ describe('instant expeditions (test mode)', () => {
     const base = new ExpeditionBase();
     base.start('glacier', new Wallet(5000));
     expect(base.update(0.01, () => 0.5)).toBeNull();
+  });
+});
+
+describe('instant hatching (test mode)', () => {
+  const egg = () => ({ id: 'e1', speciesId: 'golem', rare: false, remainingSec: 30, ready: false });
+
+  it('an egg hatches on the very next update', () => {
+    const h = new Hatchery();
+    h.instant = true;
+    h.addEgg(egg());
+    const born = h.update(0.01);
+    expect(born).toHaveLength(1);
+    expect(born[0].speciesId).toBe('golem');
+  });
+
+  it('it still waits for a free place in the hatchery', () => {
+    const h = new Hatchery();
+    h.instant = true;
+    for (let i = 0; i < BALANCE.hatcheryCapacity; i++) h.storeMonster(createMonster('golem'));
+    h.addEgg(egg());
+    expect(h.update(0.01)).toEqual([]);
+    expect(h.eggs[0].ready).toBe(true);
+  });
+
+  it('a normal egg still takes its time', () => {
+    const h = new Hatchery();
+    h.addEgg(egg());
+    expect(h.update(0.01)).toEqual([]);
   });
 });
 
