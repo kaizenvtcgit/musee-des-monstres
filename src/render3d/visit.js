@@ -491,8 +491,14 @@ class Visit {
     };
     for (const b of this.world.builder.buildings.values()) {
       const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
-      if (b.type === 'snack' || b.type === 'souvenir') {
-        const colour = b.type === 'snack' ? '#c0392b' : '#2e6fb0';
+      if (b.type === 'snack') {
+        // two stands, picked from the building id: the Kraken's waffles or the Dragon's grill
+        const n = Number(String(b.id).replace(/\D/g, '')) || 0;
+        // (the waffle stand's counter is on its +z side, the grill's on its +x side)
+        const [model, front] = n % 2 ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
+        this.placeModel(group, model, cx, cz, 2.4, this.faceToPath(b) + front);
+      } else if (b.type === 'souvenir') {
+        const colour = '#2e6fb0';
         add(new THREE.BoxGeometry(1.8, 2.2, 1.6), wood, cx, 1.1, cz);
         add(new THREE.BoxGeometry(1.9, 0.12, 0.5), white, cx, 1.05, cz + 0.95); // counter
         const awning = add(new THREE.BoxGeometry(2.3, 0.08, 1.2), new THREE.MeshStandardMaterial({ map: this.stripes(colour, '#f6f1e7'), roughness: 0.8 }), cx, 2.45, cz + 0.4);
@@ -501,10 +507,7 @@ class Visit {
       } else if (b.type === 'hatchery') {
         this.placeIncubator(group, cx, cz);
       } else if (b.type === 'expeditionBase') {
-        const tent = add(new THREE.ConeGeometry(2, 2.4, 4), new THREE.MeshStandardMaterial({ color: 0xc9b99a, roughness: 0.9 }), cx, 1.2, cz);
-        tent.rotation.y = Math.PI / 4;
-        add(new THREE.CylinderGeometry(0.03, 0.03, 3.2), wood, cx + 1.9, 1.6, cz - 1.2);
-        add(new THREE.BoxGeometry(0.6, 0.4, 0.02), new THREE.MeshStandardMaterial({ color: 0xc0392b }), cx + 2.2, 3, cz - 1.2);
+        this.placeModel(group, 'expedition-base', cx, cz, 4.8, this.faceToPath(b));
       } else {
         // a garden decoration: a round bush in flowers
         add(new THREE.IcosahedronGeometry(0.9, 1), new THREE.MeshStandardMaterial({ color: 0x4f7d3a, roughness: 0.9, flatShading: true }), cx, 0.7, cz);
@@ -515,6 +518,48 @@ class Visit {
     const ex = tx * T, ez = ty * T;
     for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.5, 3.6, 0.5), white, ex + s * 1.5, 1.8, ez);
     add(new THREE.BoxGeometry(3.6, 0.7, 0.2), wood, ex, 3.4, ez);
+  }
+
+  // A building model on its tiles: `width` metres across (its widest side), turned by `rot` (radians),
+  // standing on the ground. Loaded in the background.
+  placeModel(group, name, cx, cz, width, rot = 0) {
+    this.model(name).then((m) => {
+      if (this.buildGroup !== group) return; // rebuilt meanwhile
+      const obj = m.scene.clone(true);
+      const size = m.box.getSize(new THREE.Vector3());
+      const s = width / Math.max(size.x, size.z);
+      const inner = new THREE.Group();
+      obj.scale.setScalar(s);
+      // centred on the tiles, its feet on the ground
+      obj.position.set(-((m.box.min.x + m.box.max.x) / 2) * s, -m.box.min.y * s, -((m.box.min.z + m.box.max.z) / 2) * s);
+      inner.add(obj);
+      inner.position.set(cx, 0, cz);
+      inner.rotation.y = rot;
+      obj.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = o.receiveShadow = true;
+        o.frustumCulled = true;
+      });
+      group.add(inner);
+    }).catch((err) => console.error(err));
+  }
+
+  // The turn (radians) that points a building's front (+z of its model) toward a path next to it.
+  faceToPath(b) {
+    const { grid } = this.world;
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    let best = null;
+    for (let y = b.y0 - 1; y <= b.y1 + 1; y++) {
+      for (let x = b.x0 - 1; x <= b.x1 + 1; x++) {
+        if (!grid.inBounds(x, y) || !grid.isPath(x, y)) continue;
+        const d = Math.hypot(x - cx, y - cy);
+        if (!best || d < best.d) best = { d, dx: x - cx, dy: y - cy };
+      }
+    }
+    if (!best) return 0;
+    // keep to the four sides
+    const ang = Math.atan2(best.dx, best.dy);
+    return Math.round(ang / (Math.PI / 2)) * (Math.PI / 2);
   }
 
   // The incubator (models/incubator.glb, 5 places for eggs: nodes EggSlot_01..05) on its 2 x 2 tiles.
