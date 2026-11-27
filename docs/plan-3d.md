@@ -41,7 +41,8 @@ La « Visite 3D » à pied (déjà faite) devient un simple mode de caméra.
 
 ## Étapes (une conversation chacune)
 
-1. **Vue principale 3D** : park3d.js, caméra orbitale (clic droit libre, molette, déplacement), Phaser caché,
+1. ✅ **Vue principale 3D** (fait : `park-scene.js` = scène commune, `park3d.js` = vue du dessus + bascule,
+   `visit.js` = mode marche ; `?2d` dans l'adresse garde l'ancienne vue 2D pour les vérifications) : park3d.js, caméra orbitale (clic droit libre, molette, déplacement), Phaser caché,
    reconstruction de la scène quand le parc change (enclos / allées / bâtiments ajoutés ou démolis), bouton marche à pied.
 2. **Outils et sélection** : picking, fantômes 3D, tous les outils (allées, enclos, bâtiments, démolition), clic sur
    monstre / visiteur / bâtiment pour ouvrir sa fiche.

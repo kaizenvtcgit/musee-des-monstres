@@ -20,5 +20,13 @@ const game = new Phaser.Game({
   scene: [new GameScene(world, ui)],
 });
 
+// The 3D view is the main view; Phaser keeps running hidden underneath for the simulation.
+// (?2d in the address keeps the old 2D view, for checks.)
+if (!new URLSearchParams(window.location.search).has('2d')) {
+  import('./render3d/park3d.js')
+    .then((m) => m.startPark3D(world, ui))
+    .catch((err) => console.error(err)); // the 2D view stays
+}
+
 // handy for debugging in the browser console
 window.__museum = { world, game };
