@@ -32,7 +32,8 @@ const DECOR_RADIUS = 0.32;
 // (tile y of the monster resting in it, from the shelter's first tile).
 const SHELTER_IMG = { w: 288, h: 320, groundY: 230, tiles: 2 };
 // Shelters remodelled in Blender (models/blender/musee-decors.blend, scene MuseeShelters) for 3 x 3 tiles.
-const SHELTER_IMG_3D = { lava: { w: 432, h: 480, groundY: 345, tiles: 3 } };
+const SHELTER_FRAME_3 = { w: 432, h: 480, groundY: 345, tiles: 3 };
+const SHELTER_IMG_3D = { lava: SHELTER_FRAME_3, water: SHELTER_FRAME_3, forest: SHELTER_FRAME_3, ice: SHELTER_FRAME_3, dark: SHELTER_FRAME_3 };
 const SHELTER_RADIUS = 0.8;
 // (SHELTER_ENTRANCE now lives in src/render/shelterpath.js, with the walk into the cave)
 // Colour of the eyes glowing in the dark of a shelter.
