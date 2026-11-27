@@ -7,6 +7,8 @@ models/people/
 # photo textures from ambientCG, downloaded by scripts/render-model/render-ground.mjs
 models/textures/
 # Poly Haven models of the enclosure decorations, downloaded by scripts/render-model/render-decor.mjs
+# (and their raw 3D export, render-decor.mjs --3d, ~70 MB: compressed into src/assets/3d/decor.glb.json)
 models/decor/
 # yeti textures extracted from the GLB and the fur mask (large; the mask is documented in the README)
 models/yeti/*.png
+models/decor-3d.glb
