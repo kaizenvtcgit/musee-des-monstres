@@ -422,13 +422,13 @@ export class MonsterFX {
   }
 
   // Eyes glowing in the dark of a shelter, at (x, y), `alpha` 0 to hide them.
-  shelterEyes(entry, x, y, alpha, tint) {
+  shelterEyes(entry, x, y, alpha, tint, depth = y + 20) {
     if (alpha <= 0.01) {
       if (entry.eyes) entry.eyes.setVisible(false);
       return;
     }
     if (!entry.eyes) entry.eyes = this.scene.add.image(0, 0, 'fx-eyes').setBlendMode('ADD');
-    entry.eyes.setVisible(true).setPosition(x, y).setDepth(y + 20).setTint(tint).setAlpha(alpha).setScale(0.8);
+    entry.eyes.setVisible(true).setPosition(x, y).setDepth(depth).setTint(tint).setAlpha(alpha).setScale(0.8);
   }
 
   // The monster is no longer drawn (caught and put in the hatchery...): vanish and free its effects.

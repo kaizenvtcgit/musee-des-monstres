@@ -428,8 +428,10 @@ export class GameScene extends Phaser.Scene {
           .setOrigin(0.5, F.groundY / F.h).setDisplaySize((F.w / 2) * k, (F.h / 2) * k).setDepth(depth));
         if (this.textures.exists(`img-shelter-${sh.family}-front`)) {
           // two layers: the whole cave behind everything in it, and its rock front (the mouth cut out)
-          // in front of a monster walking in, so it really disappears into the cave
-          place(`img-shelter-${sh.family}`, tileToScreen(sh.tx, sh.ty).y - 60);
+          // in front of a monster walking in, so it really disappears into the cave. The cave is drawn
+          // just under the rock front (a monster in it goes between the two, see caveDepth), so whatever
+          // stands behind the shelter (fences, decorations, monsters) is hidden by it, never seen through it
+          place(`img-shelter-${sh.family}`, c.y + 4 * n - 1);
           place(`img-shelter-${sh.family}-front`, c.y + 4 * n);
         } else place(`img-shelter-${sh.family}`, c.y + 4 * n);
       }
@@ -726,7 +728,8 @@ export class GameScene extends Phaser.Scene {
       }
       const eyes = Math.max(0, 1 - entry.hideK / 0.35);
       const blink = Math.sin(time * 0.0013 + entry.phase * 3) > -0.93 ? 1 : 0;
-      this.fx.shelterEyes(entry, p.x, p.y - 13, eyes * blink, EYES[m.speciesId] ?? 0xffe080);
+      // in the cave the eyes glow just over its body (under the rock front)
+      this.fx.shelterEyes(entry, p.x, p.y - 13, eyes * blink, EYES[m.speciesId] ?? 0xffe080, entry.caveDepth != null ? depth + 0.2 : undefined);
       if (fx.glow && sheetKind) {
         this.fx.glowLayer(entry, m, anim, sheetKind === 'sitdown' ? 'wakeup' : sheetKind, heavyKind, fx, time, dtReal, entry.actionProgress ?? 0);
       }
