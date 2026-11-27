@@ -64,7 +64,8 @@ const FRAME_SIZE = { spectre: 176 };
 // - idleAlso: looping kinds also played now and then as idle actions (one loop);
 // - actionLoops: idle actions played several times in a row;
 // - actionGap: [min, max] game seconds of plain idling between two idle actions;
-// - crossfadeMs: blend the old pose into the new one when the animation changes;
+// - crossfadeMs: blend the old pose into the new one when the animation changes (only for see-through
+//   monsters: on a solid body the two poses show at once, like a blur);
 // - spectral: see-through floating ghost (src/render/monsterfx.js): no shadow, mist, glow, fade in/out.
 // - idleKinds: only these kinds are random idle actions (the others are played on purpose);
 // - walkSpeed: tiles / s matching the stride of its walk animation (no sliding feet); restRange: [min, max]
@@ -85,7 +86,6 @@ export const MONSTER_FX = {
     idleAlso: ['threat'], actionLoops: { sleep: 2 }, actionGap: [6, 15], crossfadeMs: 260, spectral: true,
   },
   yeti: {
-    crossfadeMs: 280,
     idleKinds: ['look', 'scratch', 'stretch', 'shake', 'happy', 'chestbeat'],
     actionGap: [7, 18],
     walkSpeed: 0.25,
@@ -100,7 +100,6 @@ export const MONSTER_FX = {
     cold: true,
   },
   golem: {
-    crossfadeMs: 320,
     idleKinds: ['look', 'stretch', 'chestbeat', 'shake'],
     actionGap: [12, 28],
     walkSpeed: 0.45,
