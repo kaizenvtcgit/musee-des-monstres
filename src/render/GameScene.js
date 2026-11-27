@@ -290,12 +290,13 @@ export class GameScene extends Phaser.Scene {
 
   // Now and then, a resting animated monster plays a one-shot action (flap its wings, look around...).
   // Returns the action kind to play, or null for the plain idle loop.
-  pickIdleAction(m, entry, dt) {
-    const actions = idleActions(this, m.speciesId);
+  // `anim`: the animation set ("kraken" or "kraken_water").
+  pickIdleAction(anim, entry, dt) {
+    const actions = idleActions(this, anim);
     if (!actions.length) return null;
     if (entry.action) {
       const cur = entry.sprite.anims.currentAnim;
-      const done = cur && cur.key.startsWith(`${m.speciesId}-${entry.action}-`) && !entry.sprite.anims.isPlaying;
+      const done = cur && cur.key.startsWith(`${anim}-${entry.action}-`) && !entry.sprite.anims.isPlaying;
       if (!done) return entry.action;
       entry.action = null;
       entry.actionIn = IDLE_ACTION_GAP[0] + Math.random() * (IDLE_ACTION_GAP[1] - IDLE_ACTION_GAP[0]);
@@ -330,9 +331,13 @@ export class GameScene extends Phaser.Scene {
       else entry.sprite.clearTint();
       if (!entry.shadow) entry.shadow = this.add.image(0, 0, 'shadow');
       let x = m.pos.x, y = m.pos.y;
-      if (m.state === 'enclosed') {
-        const e = world.builder.enclosures.get(m.enclosureId);
-        if (e) ({ x, y } = this.wanderInEnclosure(m, entry, e, dt));
+      const enc = m.state === 'enclosed' ? world.builder.enclosures.get(m.enclosureId) : null;
+      // a habitat version of the animations if there is one ("kraken_water": swimming in its pool)
+      const habitatAnim = enc && `${m.speciesId}_${enc.habitat}`;
+      const anim = animated && habitatAnim && hasAnimation(this, habitatAnim) ? habitatAnim : m.speciesId;
+      const swimming = anim !== m.speciesId;
+      if (enc) {
+        ({ x, y } = this.wanderInEnclosure(m, entry, enc, dt));
       } else {
         entry.w = null;
       }
@@ -345,14 +350,14 @@ export class GameScene extends Phaser.Scene {
       if (moving) entry.walkUntil = time + 250; // short grace so tiny stops don't flicker to idle
       if (look.directional) {
         if (moving) entry.dir = directionIndex(mdx, mdy);
-        entry.sprite.setFlipX(false).setOrigin(0.5, directionalOriginY(m.speciesId));
+        entry.sprite.setFlipX(false).setOrigin(0.5, directionalOriginY(anim));
         if (animated) {
           const walking = time < (entry.walkUntil || 0);
           let kind = walking ? (m.state === 'escaped' && hasFlyAnimation(this, m.speciesId) ? 'fly' : 'walk') : 'idle';
           if (walking) entry.action = null;
           else if (m.state === 'escaped' && hasThreatAnimation(this, m.speciesId)) { kind = 'threat'; entry.action = null; }
-          else kind = this.pickIdleAction(m, entry, dt) || kind;
-          const key = `${m.speciesId}-${kind}-d${entry.dir}`;
+          else kind = this.pickIdleAction(anim, entry, dt) || kind;
+          const key = `${anim}-${kind}-d${entry.dir}`;
           const cur = entry.sprite.anims.currentAnim;
           if (!cur || cur.key !== key) {
             // keep the stride going when only the direction changes
@@ -376,8 +381,15 @@ export class GameScene extends Phaser.Scene {
       let shadow = [0.7, 0.7];
       if (look.directional) shadow = [1.3, 1.0];
       else if (look.real) shadow = [(entry.sprite.displayWidth / 64) * 0.9, 0.9];
-      entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
-      const top = look.directional ? entry.sprite.displayHeight * directionalOriginY(m.speciesId) : entry.sprite.displayHeight;
+      if (swimming) {
+        // rings on the water around a swimming monster instead of a shadow
+        const r = 1 + 0.06 * Math.sin(time * 0.004 + entry.phase);
+        entry.shadow.setTexture('ripple').setPosition(p.x, p.y).setDepth(p.y + 0.5).setScale(1.25 * r, 1.25 * r);
+      } else {
+        if (entry.shadow.texture.key !== 'shadow') entry.shadow.setTexture('shadow');
+        entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
+      }
+      const top = look.directional ? entry.sprite.displayHeight * directionalOriginY(anim) : entry.sprite.displayHeight;
       this.setBubble(entry, m.state === 'escaped' ? 'bubble-scared' : null, p, top - 10);
     }
 

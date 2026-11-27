@@ -29,6 +29,7 @@ let gltf = null, mixer = null, box = null;
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
 
 const out = document.createElement('canvas');
+const under = document.createElement('canvas');
 const ctx = out.getContext('2d');
 
 window.loadModel = async (url) => {
@@ -46,7 +47,10 @@ window.loadModel = async (url) => {
 // `cols` columns of `frame` px. `view` = half-width of a frame in model units (zoom); the ground
 // under the model sits at row `feetY` of each frame.
 // `groundY`: height of the ground in model units (default: the lowest point of the model at rest).
-window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216, groundY = null, format = 'image/webp', quality = 0.82 }) => {
+// `waterline`: the model swims, sunk this deep (model units above its lowest point): the part above the
+// surface is drawn normally, the part below faintly and tinted like the water. The surface is the ground.
+window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216, groundY = null, waterline = null, format = 'image/webp', quality = 0.82 }) => {
+  if (waterline !== null) groundY = box.min.y + waterline;
   renderer.setSize(frame * SS, frame * SS);
   // d1 faces the viewer; each next direction turns 45 degrees (see directionIndex in sprites.js)
   pivot.rotation.y = THREE.MathUtils.degToRad((dir - 1) * 45);
@@ -69,8 +73,25 @@ window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216,
   ctx.clearRect(0, 0, out.width, out.height);
   for (let i = 0; i < frames; i++) {
     mixer.setTime((c.duration * i) / frames); // exactly one loop of the clip
+    const x = frame * (i % cols), y = frame * Math.floor(i / cols);
+    if (waterline !== null) {
+      // under the surface: tinted and faint
+      renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), groundY)];
+      renderer.render(scene, cam);
+      under.width = under.height = frame;
+      const u = under.getContext('2d');
+      u.drawImage(renderer.domElement, 0, 0, frame, frame);
+      u.globalCompositeOperation = 'source-atop';
+      u.fillStyle = 'rgba(20, 90, 105, 0.55)';
+      u.fillRect(0, 0, frame, frame);
+      ctx.globalAlpha = 0.5;
+      ctx.drawImage(under, x, y);
+      ctx.globalAlpha = 1;
+      renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -groundY)];
+    }
     renderer.render(scene, cam);
-    ctx.drawImage(renderer.domElement, frame * (i % cols), frame * Math.floor(i / cols), frame, frame);
+    renderer.clippingPlanes = [];
+    ctx.drawImage(renderer.domElement, x, y, frame, frame);
   }
   return out.toDataURL(format, quality);
 };

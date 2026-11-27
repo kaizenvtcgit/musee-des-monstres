@@ -52,7 +52,8 @@ function parseAnimName(name) {
 
 function fpsOf(species, kind) {
   if (isPerson(species)) return ANIM_FPS.person[kind] ?? 6;
-  return ANIM_FPS[species]?.[kind] ?? ANIM_FPS.default[kind] ?? 6;
+  const base = species.replace(/_[a-z]+$/, ''); // "kraken_water" plays at the speeds of "kraken"
+  return ANIM_FPS[species]?.[kind] ?? ANIM_FPS[base]?.[kind] ?? ANIM_FPS.default[kind] ?? 6;
 }
 
 export function preloadSprites(scene) {
@@ -119,7 +120,7 @@ export function realKey(scene, key) {
 export const DIRECTIONAL_SCALE = 0.5;
 export const DIRECTIONAL_ORIGIN_Y = 216 / 256;
 // Species rendered with their feet higher in the frame (room for long front tentacles).
-const ORIGIN_Y = { kraken: 176 / 256 };
+const ORIGIN_Y = { kraken: 176 / 256, kraken_water: 150 / 256 };
 export const directionalOriginY = (speciesId) => ORIGIN_Y[speciesId] ?? DIRECTIONAL_ORIGIN_Y;
 
 // Direction index 0..7 for a movement (dx, dy) in tile units.

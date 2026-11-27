@@ -37,18 +37,30 @@ const MODELS = {
       tail: { clip: 'TailWag', frames: 18 },         // 3 s at 6 fps
     },
   },
+  // on land (escaped): crawls and threatens
   kraken: {
     file: 'models/kraken.glb',
     view: 1.85, // a "pocket" kraken: a bit smaller than the dragon
-    feetY: 176, // the front tentacles reach far toward the viewer: keep room below (KRAKEN origin in sprites.js)
+    feetY: 176, // the front tentacles reach far toward the viewer: keep room below (ORIGIN_Y in sprites.js)
     still: true,
     anims: {
-      walk: { clip: 'Crawl', frames: 16 },            // 1.6 s at 10 fps
-      idle: { clip: 'Idle', frames: 16 },             // 4 s at 4 fps
-      threat: { clip: 'Threat', frames: 15 },         // 2.5 s at 6 fps (escaped and standing)
-      look: { clip: 'Look Around', frames: 18 },      // 3.6 s at 5 fps
+      walk: { clip: 'Crawl', frames: 16 },     // 1.6 s at 10 fps
+      idle: { clip: 'Idle', frames: 16 },      // 4 s at 4 fps
+      threat: { clip: 'Threat', frames: 15 },  // 2.5 s at 6 fps (escaped and standing)
+    },
+  },
+  // in a water enclosure ("<species>_<habitat>"): swims sunk to the eyes, tentacles under the surface
+  kraken_water: {
+    file: 'models/kraken.glb',
+    view: 1.85,
+    feetY: 150, // the water surface; room below for the tentacles (ORIGIN_Y in sprites.js)
+    waterline: 0.3,
+    anims: {
+      walk: { clip: 'Crawl', frames: 16 },             // 1.6 s at 10 fps
+      idle: { clip: 'Idle', frames: 16 },              // 4 s at 4 fps
+      look: { clip: 'Look Around', frames: 18 },       // 3.6 s at 5 fps
       wiggle: { clip: 'Tentacle Wiggle', frames: 18 }, // 3 s at 6 fps
-      sleep: { clip: 'Sleep', frames: 20 },           // 5 s at 4 fps
+      sleep: { clip: 'Sleep', frames: 20 },            // 5 s at 4 fps
     },
   },
 };
@@ -111,7 +123,7 @@ for (const name of names) {
     continue;
   }
   await page.evaluate((u) => window.loadModel(u), `/${m.file}`);
-  const opts = { view: m.view, frame: m.frame ?? 256, feetY: m.feetY ?? 216, groundY: m.groundY };
+  const opts = { view: m.view, frame: m.frame ?? 256, feetY: m.feetY ?? 216, groundY: m.groundY, waterline: m.waterline ?? null };
   for (const dir of m.dirs ?? [0, 1, 2, 3, 4, 5, 6, 7]) {
     for (const [kind, a] of Object.entries(m.anims)) {
       const url = await page.evaluate((o) => window.renderSheet(o), { ...opts, ...a, dir, cols: columns(a.frames) });
