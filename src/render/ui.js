@@ -5,6 +5,7 @@ import { SPECIES, LOCATIONS, HABITATS } from '../config/species.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { resolveMonsterTexture, realKey, visitorLook } from './sprites.js';
 import { capacity, canBreed } from '../sim/breeding.js';
+import { eraseGame } from '../save/storage.js';
 
 const TOOLS = [
   { type: 'select', label: 'tool.select', icon: 'visitor-0' },
@@ -16,6 +17,9 @@ const TOOLS = [
   { type: 'keeper', label: 'tool.keeper', icon: 'keeper', price: () => t('tool.price', { n: BALANCE.keeperHireCost }), action: true },
   { type: 'demolish', label: 'tool.demolish', icon: null },
 ];
+
+const NEW_GAME_CONFIRM_MS = 3000;
+const SAVED_BADGE_MS = 1800;
 
 const LOCATION_HABITAT = { volcano: 'lava', lagoon: 'water', crypt: 'dark', ancientForest: 'forest', glacier: 'ice' };
 
@@ -29,13 +33,15 @@ function bar(pct, invert = false) {
   return `<div class="bar ${cls}"><div style="width:${v}%"></div></div>`;
 }
 
-export function createUI(world) {
-  return new UI(world);
+export function createUI(world, opts = {}) {
+  return new UI(world, opts);
 }
 
 class UI {
-  constructor(world) {
+  constructor(world, { resumed = false } = {}) {
     this.world = world;
+    this.resumed = resumed;
+    this.confirmNewGameUntil = 0;
     this.scene = null;
     this.selection = null;
     this.lastRefresh = 0;
@@ -67,6 +73,7 @@ class UI {
       <button data-habitat="${h}"><img src="${this.img(`tile-${h}`)}" width="40"><small>${esc(t(`habitat.${h}`))}</small></button>`).join('');
     this.setTool({ type: 'select' });
     this.refresh(true);
+    if (this.resumed) this.toast(t('save.resumed'), 'good');
   }
 
   // Portrait of a visitor: its 3D character if rendered, else the flat drawing.
@@ -142,6 +149,16 @@ class UI {
     if (!btn) return;
     if (btn.dataset.speed !== undefined) this.world.setSpeed(Number(btn.dataset.speed));
     if (btn.dataset.ticket) this.world.setTicketPrice(this.world.ticketPrice + Number(btn.dataset.ticket));
+    if (btn.dataset.newgame !== undefined) {
+      // first click asks for confirmation, a second click within a few seconds starts over
+      if (performance.now() < this.confirmNewGameUntil) {
+        eraseGame();
+        window.location.reload();
+        return;
+      }
+      this.confirmNewGameUntil = performance.now() + NEW_GAME_CONFIRM_MS;
+      setTimeout(() => this.refresh(true), NEW_GAME_CONFIRM_MS + 50);
+    }
     this.refresh(true);
   }
 
@@ -157,7 +174,22 @@ class UI {
       <span class="stat">${esc(t('hud.visitors', { n: w.visitors.length }))}</span>
       <span><span class="label">${esc(t('hud.reputation'))}</span><span class="stars">${starText}</span></span>
       <span class="group">${speedBtn(0, '❚❚')}${speedBtn(1, 'x1')}${speedBtn(2, 'x2')}${speedBtn(3, 'x3')}</span>
-      <span class="group"><button data-ticket="-5">−</button><span class="stat">${esc(t('hud.ticket', { n: w.ticketPrice }))}</span><button data-ticket="5">+</button></span>`;
+      <span class="group"><button data-ticket="-5">−</button><span class="stat">${esc(t('hud.ticket', { n: w.ticketPrice }))}</span><button data-ticket="5">+</button></span>
+      <span class="group">${this.renderSaveButtons()}</span>`;
+  }
+
+  renderSaveButtons() {
+    const confirming = performance.now() < this.confirmNewGameUntil;
+    const saved = performance.now() - (this.savedAt ?? -1e9) < SAVED_BADGE_MS;
+    return `<span class="saved ${saved ? 'show' : ''}" title="${esc(t('save.autosave'))}">✓ ${esc(t('save.saved'))}</span>
+      <button data-newgame class="${confirming ? 'danger' : ''}" title="${esc(t('save.newGameHelp'))}">${esc(t(confirming ? 'save.confirmNewGame' : 'save.newGame'))}</button>`;
+  }
+
+  // called by the autosave (src/save/storage.js)
+  onSaved() {
+    this.savedAt = performance.now();
+    this.refresh(true);
+    setTimeout(() => this.refresh(true), SAVED_BADGE_MS + 50);
   }
 
   renderObjectives() {

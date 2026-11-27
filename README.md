@@ -35,10 +35,12 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 - **Clic droit, ou glisser avec l'outil Sélection** : déplacer la vue. **Molette** : zoomer. **Échap** : annuler l'outil.
 - Clique sur la **tente** pour lancer une expédition, puis sur la **couveuse** pour placer le monstre né.
 - Un monstre malheureux s'évade : clique dessus pour l'attraper, ou embauche des gardiens.
+- La partie est **sauvegardée automatiquement** dans le navigateur (toutes les 20 secondes et quand on quitte la page) et reprend à la réouverture. Le bouton **Nouvelle partie** (deux clics) efface la sauvegarde.
 
 ## Organisation du code
 
 - `src/sim/` : toutes les règles du jeu (sans affichage), testées dans `tests/sim/`.
+- `src/sim/save.js` : transforme une partie en données (et l'inverse) ; `src/save/storage.js` : l'enregistre dans le navigateur.
 - `src/render/` : l'affichage (Phaser) et l'interface (HTML).
 - `src/config/balance.js` : tous les chiffres à régler (prix, vitesses, probabilités).
 - `src/i18n/fr.js` : tous les textes du jeu.

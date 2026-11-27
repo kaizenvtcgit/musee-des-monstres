@@ -50,6 +50,9 @@ button small { display: block; font-size: 11px; color: var(--muted); }
 #hud .stars { color: var(--accent); font-size: 16px; letter-spacing: 2px; }
 #hud .group { display: flex; gap: 4px; align-items: center; }
 #hud button { padding: 3px 9px; font-size: 13px; }
+#hud .saved { font-size: 12px; color: var(--good); opacity: 0; transition: opacity 0.4s; }
+#hud .saved.show { opacity: 1; }
+#hud button.danger { background: rgba(229, 83, 75, 0.25); border-color: var(--bad); }
 
 #objectives { position: absolute; top: 70px; left: 10px; padding: 10px 14px; width: 220px; font-size: 13px; }
 #objectives h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }

@@ -2,6 +2,11 @@ import { SPECIES } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
 
 let nextMonsterId = 1;
+
+// Saved games: new ids must not reuse the ones already in the loaded game.
+export function reserveMonsterIds(n) {
+  nextMonsterId = Math.max(nextMonsterId, n + 1);
+}
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export function createMonster(speciesId, { rare = false } = {}) {

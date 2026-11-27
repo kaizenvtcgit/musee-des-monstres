@@ -9,6 +9,11 @@ const CATCH_DIST = 0.8;
 
 let nextKeeperId = 1;
 
+// Saved games: new ids must not reuse the ones already in the loaded game.
+export function reserveKeeperIds(n) {
+  nextKeeperId = Math.max(nextKeeperId, n + 1);
+}
+
 export function hireKeeper(keepers, wallet, spawnTile) {
   if (!wallet.spend(BALANCE.keeperHireCost)) return { ok: false, reason: 'noMoney' };
   const k = {

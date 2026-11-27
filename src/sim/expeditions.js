@@ -6,6 +6,11 @@ import { capacity } from './breeding.js';
 
 let nextEggId = 1;
 
+// Saved games: new ids must not reuse the ones already in the loaded game.
+export function reserveEggIds(n) {
+  nextEggId = Math.max(nextEggId, n + 1);
+}
+
 export class ExpeditionBase {
   constructor() {
     this.active = null; // { locationId, remainingSec, durationSec }

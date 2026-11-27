@@ -13,6 +13,11 @@ const STUCK_GIVE_UP_SEC = 20;
 
 let nextVisitorId = 1;
 
+// Saved games: new ids must not reuse the ones already in the loaded game.
+export function reserveVisitorIds(n) {
+  nextVisitorId = Math.max(nextVisitorId, n + 1);
+}
+
 export function spawnIntervalSec(reputation, ticketPrice) {
   return (BALANCE.visitorBaseIntervalSec / (0.5 + reputation / 2)) * (ticketPrice / BALANCE.ticketPriceRef);
 }

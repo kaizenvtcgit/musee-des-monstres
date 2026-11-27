@@ -2,9 +2,13 @@ import Phaser from 'phaser';
 import { createInitialWorld } from './sim/world.js';
 import { GameScene } from './render/GameScene.js';
 import { createUI } from './render/ui.js';
+import { loadGame, startAutosave } from './save/storage.js';
 
-const world = createInitialWorld(Math.floor(Math.random() * 1e9));
-const ui = createUI(world);
+// resume the saved game if there is one
+const saved = loadGame();
+const world = saved ?? createInitialWorld(Math.floor(Math.random() * 1e9));
+const ui = createUI(world, { resumed: !!saved });
+startAutosave(world, () => ui.onSaved());
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
