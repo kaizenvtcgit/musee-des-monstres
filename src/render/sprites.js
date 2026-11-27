@@ -19,13 +19,31 @@ export const DECOR_URLS = Object.fromEntries(
   Object.entries(decor).map(([path, url]) => [path.split('/').pop().replace('.png', ''), url]),
 );
 
-// Animated 3D models: horizontal strips of 256 px frames, "<speciesId>-<walk|idle>-d<0..7>.png".
-const animFiles = import.meta.glob('../assets/anims/*.png', { eager: true, query: '?url', import: 'default' });
+// Animated 3D models: sheets of 256 px frames (read left to right, then row by row, every cell used),
+// "<speciesId>-<kind>-d<0..7>.png|webp". Kinds:
+// - walk, idle: required, looping;
+// - fly: optional, looping, replaces walk while the monster is escaped;
+// - any other kind (flap, stretch, look, tail...): optional one-shot "idle action" played now and then at rest.
+const animFiles = import.meta.glob('../assets/anims/*.{png,webp}', { eager: true, query: '?url', import: 'default' });
 export const ANIM_URLS = Object.fromEntries(
-  Object.entries(animFiles).map(([path, url]) => [path.split('/').pop().replace('.png', ''), url]),
+  Object.entries(animFiles).map(([path, url]) => [path.split('/').pop().replace(/\.(png|webp)$/, ''), url]),
 );
-// Playback speed of each animation (frames per second of the sampled strip).
-const ANIM_FPS = { walk: 8, idle: 3 };
+const LOOPING = new Set(['walk', 'idle', 'fly']);
+// Playback speed of each animation (frames per second of the sampled sheet), per species.
+const ANIM_FPS = {
+  default: { walk: 8, idle: 3 },
+  // dragonnet: rendered from dragon_animated_v2.glb with scripts/render-model (one loop = one clip)
+  dragonnet: { walk: 10, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
+};
+
+function parseAnimName(name) {
+  const m = name.match(/^(.+)-([a-z]+)-d(\d)$/);
+  return m ? { species: m[1], kind: m[2], dir: Number(m[3]) } : null;
+}
+
+function fpsOf(species, kind) {
+  return ANIM_FPS[species]?.[kind] ?? ANIM_FPS.default[kind] ?? 6;
+}
 
 export function preloadSprites(scene) {
   for (const [name, url] of Object.entries(SPRITE_URLS)) scene.load.image(`real-${name}`, url);
@@ -35,18 +53,38 @@ export function preloadSprites(scene) {
   }
 }
 
-// Called once after loading: one looping Phaser animation per strip (same key as the strip).
+// Called once after loading: one Phaser animation per sheet (same key as the sheet).
 export function createAnimations(scene) {
   for (const name of Object.keys(ANIM_URLS)) {
-    const kind = name.includes('-walk-') ? 'walk' : 'idle';
-    if (scene.anims.exists(name)) continue;
+    const info = parseAnimName(name);
+    if (!info || scene.anims.exists(name)) continue;
     scene.anims.create({
       key: name,
       frames: scene.anims.generateFrameNumbers(`anim-${name}`),
-      frameRate: ANIM_FPS[kind],
-      repeat: -1,
+      frameRate: fpsOf(info.species, info.kind),
+      repeat: LOOPING.has(info.kind) ? -1 : 0,
     });
   }
+}
+
+// One-shot idle actions available for a species (e.g. ['flap', 'look']), with their length in game seconds.
+const actionCache = new Map();
+export function idleActions(scene, speciesId) {
+  if (!actionCache.has(speciesId)) {
+    const list = [];
+    for (const name of Object.keys(ANIM_URLS)) {
+      const info = parseAnimName(name);
+      if (!info || info.species !== speciesId || info.dir !== 0 || LOOPING.has(info.kind)) continue;
+      const anim = scene.anims.get(name);
+      if (anim) list.push({ kind: info.kind, duration: anim.frames.length / anim.frameRate });
+    }
+    actionCache.set(speciesId, list);
+  }
+  return actionCache.get(speciesId);
+}
+
+export function hasFlyAnimation(scene, speciesId) {
+  return scene.anims.exists(`${speciesId}-fly-d0`);
 }
 
 export function hasAnimation(scene, speciesId) {

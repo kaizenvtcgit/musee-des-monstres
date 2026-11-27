@@ -25,6 +25,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `npm run build` | Crée la version à publier dans le dossier `dist/` |
 | `npm run preview` | Ouvre la version publiable pour la vérifier |
 | `node scripts/balance-sim.js` | Simule 15 minutes de jeu pour régler l'équilibre |
+| `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre à partir de son modèle 3D (`models/dragonnet.glb`). Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
 
 ## Comment jouer
 
@@ -39,4 +40,5 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 - `src/render/` : l'affichage (Phaser) et l'interface (HTML).
 - `src/config/balance.js` : tous les chiffres à régler (prix, vitesses, probabilités).
 - `src/i18n/fr.js` : tous les textes du jeu.
+- `models/` : les modèles 3D animés des monstres (.glb), transformés en images par `scripts/render-model/`.
 - `docs/` : document de conception et plan de construction.

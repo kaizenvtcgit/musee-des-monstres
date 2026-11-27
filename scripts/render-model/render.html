@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<body style="margin:0">
+<script type="importmap">
+  { "imports": { "three": "/three/build/three.module.js", "three/addons/": "/three/examples/jsm/" } }
+</script>
+<script type="module">
+// Renders an animated .glb into game sprite sheets (driven by render.mjs).
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const FRAME = 256;   // size of one frame in the game
+const SS = 2;        // supersampling: render at 2x then shrink, for smooth edges
+const FEET_Y = 216;  // frame row where the model's feet sit (DIRECTIONAL_ORIGIN_Y in sprites.js)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setSize(FRAME * SS, FRAME * SS);
+renderer.setClearColor(0, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x665544, 2.8));
+const sun = new THREE.DirectionalLight(0xfff2dd, 3.6);
+sun.position.set(-3, 6, 4);
+scene.add(sun);
+
+const gltf = await new GLTFLoader().loadAsync('/model.glb');
+const pivot = new THREE.Group();
+pivot.add(gltf.scene);
+scene.add(pivot);
+const mixer = new THREE.AnimationMixer(gltf.scene);
+const box = new THREE.Box3().setFromObject(gltf.scene);
+
+// Orthographic camera looking down at 30 degrees, like the game's isometric view.
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
+
+const out = document.createElement('canvas');
+const ctx = out.getContext('2d');
+ctx.imageSmoothingQuality = 'high';
+
+window.clips = gltf.animations.map((c) => c.name);
+
+// One sheet: `frames` frames of `clip`, model turned toward game direction `dir` (0..7),
+// laid out in `cols` columns. `view` = half-width of a frame in model units (zoom).
+window.renderSheet = ({ clip, dir, frames, cols, view }) => {
+  // d1 faces the viewer; each next direction turns 45 degrees (see directionIndex in sprites.js)
+  pivot.rotation.y = THREE.MathUtils.degToRad((dir - 1) * 45);
+  const e = THREE.MathUtils.degToRad(30);
+  cam.position.set(0, Math.sin(e) * 20, Math.cos(e) * 20);
+  cam.lookAt(0, 0, 0);
+  Object.assign(cam, { left: -view, right: view, top: view, bottom: -view });
+  cam.updateProjectionMatrix();
+  // put the ground point under the model at (FRAME / 2, FEET_Y)
+  const shift = new THREE.Vector3(0, -((FEET_Y - FRAME / 2) / (FRAME / 2)) * view, 0).applyQuaternion(cam.quaternion);
+  cam.position.add(new THREE.Vector3(0, box.min.y, 0).sub(shift));
+
+  const c = gltf.animations.find((a) => a.name === clip);
+  if (!c) throw new Error(`No animation "${clip}" in the model (has: ${window.clips.join(', ')})`);
+  mixer.stopAllAction();
+  mixer.clipAction(c).play();
+  out.width = FRAME * cols;
+  out.height = FRAME * Math.ceil(frames / cols);
+  ctx.clearRect(0, 0, out.width, out.height);
+  for (let i = 0; i < frames; i++) {
+    mixer.setTime((c.duration * i) / frames); // exactly one loop of the clip
+    renderer.render(scene, cam);
+    ctx.drawImage(renderer.domElement, FRAME * (i % cols), FRAME * Math.floor(i / cols), FRAME, FRAME);
+  }
+  return out.toDataURL('image/webp', 0.82);
+};
+
+// First idle frame alone, as a PNG (still image used for portraits).
+window.renderStill = ({ clip, dir, view }) => {
+  window.renderSheet({ clip, dir, frames: 1, cols: 1, view });
+  return out.toDataURL('image/png');
+};
+window.ready = true;
+</script>
+</body>
+</html>

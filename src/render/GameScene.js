@@ -3,11 +3,13 @@ import { tileToScreen, screenToTile } from '../sim/iso.js';
 import { generateTextures } from './textures.js';
 import {
   preloadSprites, resolveMonsterTexture, realKey, directionIndex, DIRECTIONAL_ORIGIN_Y,
-  createAnimations, hasAnimation,
+  createAnimations, hasAnimation, hasFlyAnimation, idleActions,
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
+// Game seconds of plain idling between two idle actions (wing flap, look around...).
+const IDLE_ACTION_GAP = [4, 12];
 const MONSTER_RADIUS = { dragonnet: 0.6, kraken: 0.6, spectre: 0.4, golem: 0.45, yeti: 0.45 };
 import { capacity } from '../sim/breeding.js';
 
@@ -269,6 +271,29 @@ export class GameScene extends Phaser.Scene {
     return { x: entry.w.x, y: entry.w.y };
   }
 
+  // Now and then, a resting animated monster plays a one-shot action (flap its wings, look around...).
+  // Returns the action kind to play, or null for the plain idle loop.
+  pickIdleAction(m, entry, dt) {
+    const actions = idleActions(this, m.speciesId);
+    if (!actions.length) return null;
+    if (entry.action) {
+      const cur = entry.sprite.anims.currentAnim;
+      const done = cur && cur.key.startsWith(`${m.speciesId}-${entry.action}-`) && !entry.sprite.anims.isPlaying;
+      if (!done) return entry.action;
+      entry.action = null;
+      entry.actionIn = IDLE_ACTION_GAP[0] + Math.random() * (IDLE_ACTION_GAP[1] - IDLE_ACTION_GAP[0]);
+      return null;
+    }
+    if (entry.actionIn == null) entry.actionIn = Math.random() * IDLE_ACTION_GAP[1];
+    entry.actionIn -= dt;
+    if (entry.actionIn > 0) return null;
+    const a = actions[Math.floor(Math.random() * actions.length)];
+    entry.action = a.kind;
+    // stay put until the action is over
+    if (entry.w) entry.w.rest = Math.max(entry.w.rest, a.duration + 0.2);
+    return a.kind;
+  }
+
   syncEntities(time, dt = 0) {
     const { world } = this;
     const alive = new Set();
@@ -305,7 +330,10 @@ export class GameScene extends Phaser.Scene {
         if (moving) entry.dir = directionIndex(mdx, mdy);
         entry.sprite.setFlipX(false).setOrigin(0.5, DIRECTIONAL_ORIGIN_Y);
         if (animated) {
-          const kind = time < (entry.walkUntil || 0) ? 'walk' : 'idle';
+          const walking = time < (entry.walkUntil || 0);
+          let kind = walking ? (m.state === 'escaped' && hasFlyAnimation(this, m.speciesId) ? 'fly' : 'walk') : 'idle';
+          if (walking) entry.action = null;
+          else kind = this.pickIdleAction(m, entry, dt) || kind;
           const key = `${m.speciesId}-${kind}-d${entry.dir}`;
           const cur = entry.sprite.anims.currentAnim;
           if (!cur || cur.key !== key) {
