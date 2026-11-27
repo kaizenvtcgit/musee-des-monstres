@@ -13,6 +13,7 @@ useTestSave(testMode);
 const saved = loadGame();
 const world = saved ?? createInitialWorld(Math.floor(Math.random() * 1e9));
 world.wallet.unlimited = testMode;
+world.expeditionBase.instant = testMode;
 const ui = createUI(world, { resumed: !!saved, testMode });
 startAutosave(world, () => ui.onSaved());
 

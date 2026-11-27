@@ -14,13 +14,15 @@ export function reserveEggIds(n) {
 export class ExpeditionBase {
   constructor() {
     this.active = null; // { locationId, remainingSec, durationSec }
+    // test mode (src/testmode.js): the team comes back at once
+    this.instant = false;
   }
 
   start(locationId, wallet) {
     if (this.active) return { ok: false, reason: 'busy' };
     if (!wallet.spend(BALANCE.expeditionCost)) return { ok: false, reason: 'noMoney' };
     const durationSec = LOCATIONS[locationId].durationSec;
-    this.active = { locationId, remainingSec: durationSec, durationSec };
+    this.active = { locationId, remainingSec: this.instant ? 0 : durationSec, durationSec };
     return { ok: true };
   }
 
@@ -32,6 +34,7 @@ export class ExpeditionBase {
   // Returns the egg brought back when the expedition ends, else null.
   update(dt, rng) {
     if (!this.active) return null;
+    if (this.instant) this.active.remainingSec = 0; // test mode, even for one already away
     this.active.remainingSec -= dt;
     if (this.active.remainingSec > 1e-9) return null;
     const loc = LOCATIONS[this.active.locationId];
