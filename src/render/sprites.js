@@ -36,6 +36,7 @@ const ANIM_FPS = {
   // dragonnet: rendered from dragon_animated_v2.glb with scripts/render-model (one loop = one clip)
   dragonnet: { walk: 10, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
   kraken: { walk: 10, idle: 4, threat: 6, look: 5, wiggle: 6, sleep: 4 },
+  spectre: { walk: 6, idle: 3, threat: 4, look: 3, haunt: 4, sleep: 2 },
   // every "person-..." sheet (Quaternius characters, see scripts/render-model/render.mjs)
   person: { walk: 7.2, run: 8, idle: 2.88, wave: 5.76 },
 };
@@ -45,6 +46,23 @@ export const PERSON_FRAME = 128;
 export const PERSON_ORIGIN_Y = 108 / 128;
 const isPerson = (name) => name.startsWith('person-');
 
+// Monsters whose sheets are cropped tighter than 256 px (same scale, less weight).
+const FRAME_SIZE = { spectre: 176 };
+
+// Per-species behaviour of the animated sprite (only for the species listed; the others keep the defaults):
+// - idleAlso: looping kinds also played now and then as idle actions (one loop);
+// - actionLoops: idle actions played several times in a row;
+// - actionGap: [min, max] game seconds of plain idling between two idle actions;
+// - crossfadeMs: blend the old pose into the new one when the animation changes;
+// - spectral: see-through floating ghost (src/render/spectral.js): no shadow, mist, glow, fade in/out.
+export const MONSTER_FX = {
+  spectre: {
+    idleAlso: ['threat'], actionLoops: { sleep: 2 }, actionGap: [6, 15], crossfadeMs: 260, spectral: true,
+  },
+};
+const baseSpecies = (species) => species.replace(/_[a-z]+$/, '');
+export const monsterFx = (species) => MONSTER_FX[baseSpecies(species)] ?? {};
+
 function parseAnimName(name) {
   const m = name.match(/^(.+)-([a-z]+)-d(\d)$/);
   return m ? { species: m[1], kind: m[2], dir: Number(m[3]) } : null;
@@ -52,7 +70,7 @@ function parseAnimName(name) {
 
 function fpsOf(species, kind) {
   if (isPerson(species)) return ANIM_FPS.person[kind] ?? 6;
-  const base = species.replace(/_[a-z]+$/, ''); // "kraken_water" plays at the speeds of "kraken"
+  const base = baseSpecies(species); // "kraken_water" plays at the speeds of "kraken"
   return ANIM_FPS[species]?.[kind] ?? ANIM_FPS[base]?.[kind] ?? ANIM_FPS.default[kind] ?? 6;
 }
 
@@ -60,7 +78,7 @@ export function preloadSprites(scene) {
   for (const [name, url] of Object.entries(SPRITE_URLS)) scene.load.image(`real-${name}`, url);
   for (const [name, url] of Object.entries(DECOR_URLS)) scene.load.image(`img-${name}`, url);
   for (const [name, url] of Object.entries(ANIM_URLS)) {
-    const size = isPerson(name) ? PERSON_FRAME : 256;
+    const size = isPerson(name) ? PERSON_FRAME : FRAME_SIZE[baseSpecies(parseAnimName(name)?.species ?? '')] ?? 256;
     scene.load.spritesheet(`anim-${name}`, url, { frameWidth: size, frameHeight: size });
   }
 }
@@ -74,21 +92,24 @@ export function createAnimations(scene) {
       key: name,
       frames: scene.anims.generateFrameNumbers(`anim-${name}`),
       frameRate: fpsOf(info.species, info.kind),
-      repeat: LOOPING.has(info.kind) ? -1 : 0,
+      repeat: LOOPING.has(info.kind) ? -1 : (monsterFx(info.species).actionLoops?.[info.kind] ?? 1) - 1,
     });
   }
 }
 
-// One-shot idle actions available for a species (e.g. ['flap', 'look']), with their length in game seconds.
+// Idle actions available for a species (e.g. ['flap', 'look']), with their length in game seconds.
 const actionCache = new Map();
 export function idleActions(scene, speciesId) {
   if (!actionCache.has(speciesId)) {
     const list = [];
+    const fx = monsterFx(speciesId);
     for (const name of Object.keys(ANIM_URLS)) {
       const info = parseAnimName(name);
-      if (!info || info.species !== speciesId || info.dir !== 0 || LOOPING.has(info.kind)) continue;
+      if (!info || info.species !== speciesId || info.dir !== 0) continue;
+      if (LOOPING.has(info.kind) && !fx.idleAlso?.includes(info.kind)) continue;
       const anim = scene.anims.get(name);
-      if (anim) list.push({ kind: info.kind, duration: anim.frames.length / anim.frameRate });
+      const loops = fx.actionLoops?.[info.kind] ?? 1;
+      if (anim) list.push({ kind: info.kind, duration: (loops * anim.frames.length) / anim.frameRate });
     }
     actionCache.set(speciesId, list);
   }
@@ -120,7 +141,7 @@ export function realKey(scene, key) {
 export const DIRECTIONAL_SCALE = 0.5;
 export const DIRECTIONAL_ORIGIN_Y = 216 / 256;
 // Species rendered with their feet higher in the frame (room for long front tentacles).
-const ORIGIN_Y = { kraken: 176 / 256, kraken_water: 150 / 256 };
+const ORIGIN_Y = { kraken: 176 / 256, kraken_water: 150 / 256, spectre: 1 };
 export const directionalOriginY = (speciesId) => ORIGIN_Y[speciesId] ?? DIRECTIONAL_ORIGIN_Y;
 
 // Direction index 0..7 for a movement (dx, dy) in tile units.

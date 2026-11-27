@@ -25,7 +25,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `npm run build` | Crée la version à publier dans le dossier `dist/` |
 | `npm run preview` | Ouvre la version publiable pour la vérifier |
 | `node scripts/balance-sim.js` | Simule 15 minutes de jeu pour régler l'équilibre |
-| `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre (`dragonnet`) ou des personnes (`people`) à partir des modèles 3D. Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
+| `node scripts/render-model/render.mjs dragonnet` | Refait les images animées d'un monstre (`dragonnet`, `kraken`, `kraken_water`, `spectre`) ou des personnes (`people`) à partir des modèles 3D. Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
 | `node scripts/render-model/render-fence.mjs` | Refait les images des barrières des enclos (barreaux de fer, et vitres là où un enclos touche une allée), dessinées dans `scripts/render-model/fence.html` |
 | `node scripts/render-model/render-ground.mjs` | Refait les sols des enclos (lave, eau, crypte, forêt, neige) à partir de textures photo, téléchargées automatiquement |
 
@@ -42,6 +42,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 - `src/sim/` : toutes les règles du jeu (sans affichage), testées dans `tests/sim/`.
 - `src/sim/save.js` : transforme une partie en données (et l'inverse) ; `src/save/storage.js` : l'enregistre dans le navigateur.
 - `src/render/` : l'affichage (Phaser) et l'interface (HTML).
+- `src/render/monsterfx.js` : effets en plus de certains monstres (fondus entre animations ; spectre : brume, lueur, apparition), réglés par espèce dans `MONSTER_FX` (`src/render/sprites.js`).
 - `src/config/balance.js` : tous les chiffres à régler (prix, vitesses, probabilités).
 - `src/i18n/fr.js` : tous les textes du jeu.
 - `models/` : les modèles 3D animés (.glb, .gltf), transformés en images par `scripts/render-model/`.

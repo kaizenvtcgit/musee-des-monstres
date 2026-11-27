@@ -49,6 +49,30 @@ const MODELS = {
       threat: { clip: 'Threat', frames: 15 },  // 2.5 s at 6 fps (escaped and standing)
     },
   },
+  // floats above the ground; eyes glow, the bottom of the body dissolves into mist
+  spectre: {
+    file: 'models/spectre.glb',
+    // same scale as the other monsters (view 1.75 in a 256 px frame) but cropped to 176 px around the body:
+    // a third of the weight (FRAME_SIZE and ORIGIN_Y in sprites.js)
+    frame: 176,
+    view: 1.75 * (176 / 256),
+    feetY: 176,
+    hover: 0.12,
+    bloom: { strength: 2.2, radius: 3, tint: [0.6, 0.88, 1] }, // icy blue halo around the eyes
+    dissolve: { height: 0.3, edge: 0.55 },
+    still: true,
+    // wispy see-through mist compresses badly: few frames (slow ghostly moves), 16 transparency levels
+    quality: 0.72,
+    alphaLevels: 16,
+    anims: {
+      walk: { clip: 'Float', frames: 12 },        // 2 s at 6 fps (moving)
+      idle: { clip: 'Idle', frames: 12 },         // 4 s at 3 fps
+      threat: { clip: 'Threat', frames: 10 },     // 2.5 s at 4 fps (escaped and standing; also an idle action)
+      look: { clip: 'Look Around', frames: 12 },  // 4 s at 3 fps
+      haunt: { clip: 'Haunt', frames: 12 },       // 3 s at 4 fps
+      sleep: { clip: 'Sleep', frames: 10 },       // 5 s at 2 fps
+    },
+  },
   // in a water enclosure ("<species>_<habitat>"): swims sunk to the eyes, tentacles under the surface
   kraken_water: {
     file: 'models/kraken.glb',
@@ -123,7 +147,10 @@ for (const name of names) {
     continue;
   }
   await page.evaluate((u) => window.loadModel(u), `/${m.file}`);
-  const opts = { view: m.view, frame: m.frame ?? 256, feetY: m.feetY ?? 216, groundY: m.groundY, waterline: m.waterline ?? null };
+  const opts = {
+    view: m.view, frame: m.frame ?? 256, feetY: m.feetY ?? 216, groundY: m.groundY, waterline: m.waterline ?? null,
+    hover: m.hover ?? 0, bloom: m.bloom ?? null, dissolve: m.dissolve ?? null, quality: m.quality ?? 0.82, alphaLevels: m.alphaLevels ?? 0,
+  };
   for (const dir of m.dirs ?? [0, 1, 2, 3, 4, 5, 6, 7]) {
     for (const [kind, a] of Object.entries(m.anims)) {
       const url = await page.evaluate((o) => window.renderSheet(o), { ...opts, ...a, dir, cols: columns(a.frames) });

@@ -30,6 +30,94 @@ const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
 
 const out = document.createElement('canvas');
 const under = document.createElement('canvas');
+const one = document.createElement('canvas');
+const glow = document.createElement('canvas');
+const one2 = document.createElement('canvas');
+
+// Periodic value noise in [0, 1] (size x size, wraps around), for the dissolving edge.
+const NOISE = 64;
+const noise = (() => {
+  let s = 12345;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const grid = Array.from({ length: 8 * 8 }, rnd);
+  const g = (x, y) => grid[((y % 8) + 8) % 8 * 8 + (((x % 8) + 8) % 8)];
+  const out = new Float32Array(NOISE * NOISE);
+  for (let y = 0; y < NOISE; y++) {
+    for (let x = 0; x < NOISE; x++) {
+      const fx = (x / NOISE) * 8, fy = (y / NOISE) * 8;
+      const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const a = g(ix, iy) + (g(ix + 1, iy) - g(ix, iy)) * sx;
+      const b = g(ix, iy + 1) + (g(ix + 1, iy + 1) - g(ix, iy + 1)) * sx;
+      out[y * NOISE + x] = a + (b - a) * sy;
+    }
+  }
+  return out;
+})();
+
+// Fades out the bottom `height` of the model through a noise that drifts down over one loop (`phase` 0..1).
+function dissolveBottom(o, frame, feetY, view, hover, { height, edge }, phase) {
+  const img = o.getImageData(0, 0, frame, frame);
+  const d = img.data;
+  const pxPerUnit = frame / (2 * view);
+  const bottom = feetY - hover * pxPerUnit * Math.cos(Math.PI / 6); // lowest point of the model on screen
+  const modelPx = (box.max.y - box.min.y) * pxPerUnit;
+  const top = bottom - height * modelPx;
+  const shift = Math.floor(phase * NOISE);
+  for (let y = Math.max(0, Math.floor(top)); y < frame; y++) {
+    const t = Math.min(1, Math.max(0, (bottom - y) / (bottom - top))); // 1 at the top of the band, 0 at the bottom
+    for (let x = 0; x < frame; x++) {
+      const i = (y * frame + x) * 4 + 3;
+      if (!d[i]) continue;
+      const n = noise[(((Math.floor(y / 2) - shift) % NOISE + NOISE) % NOISE) * NOISE + (Math.floor(x / 2) % NOISE)];
+      const k = Math.min(1, Math.max(0, (t - edge * n) / (1 - edge)));
+      d[i] = d[i] * k;
+    }
+  }
+  o.putImageData(img, 0, 0);
+}
+
+// Adds a soft glow around the emissive parts: renders them alone, blurs them, adds them on top.
+function addBloom(o, frame, { strength, radius, tint = [1, 1, 1] }) {
+  const saved = [];
+  gltf.scene.traverse((m) => {
+    if (!m.isMesh) return;
+    saved.push([m, m.material]);
+    const glowMat = m.material.clone();
+    glowMat.map = null;
+    glowMat.color = new THREE.Color(0);
+    glowMat.vertexColors = false;
+    glowMat.transparent = false;
+    m.material = glowMat;
+  });
+  const lights = scene.children.filter((c) => c.isLight);
+  lights.forEach((l) => { l.userData.i = l.intensity; l.intensity = 0; });
+  renderer.render(scene, cam);
+  lights.forEach((l) => { l.intensity = l.userData.i; });
+  saved.forEach(([m, mat]) => { m.material.dispose(); m.material = mat; });
+  glow.width = glow.height = frame;
+  const g = glow.getContext('2d', { willReadFrequently: true });
+  g.drawImage(renderer.domElement, 0, 0, frame, frame);
+  // keep only the light: black body = fully transparent, bright eyes = opaque
+  const img = g.getImageData(0, 0, frame, frame);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i + 3] = Math.max(d[i], d[i + 1], d[i + 2]);
+    d[i] *= tint[0]; d[i + 1] *= tint[1]; d[i + 2] *= tint[2];
+  }
+  g.putImageData(img, 0, 0);
+  one2.width = one2.height = frame;
+  const g2 = one2.getContext('2d');
+  g2.filter = `blur(${radius}px)`;
+  g2.drawImage(glow, 0, 0);
+  g2.filter = 'none';
+  g2.drawImage(glow, 0, 0); // the sharp core on top of its blurred halo
+  o.save();
+  o.globalCompositeOperation = 'lighter';
+  o.globalAlpha = strength;
+  o.drawImage(one2, 0, 0);
+  o.restore();
+}
 const ctx = out.getContext('2d');
 
 window.loadModel = async (url) => {
@@ -49,8 +137,15 @@ window.loadModel = async (url) => {
 // `groundY`: height of the ground in model units (default: the lowest point of the model at rest).
 // `waterline`: the model swims, sunk this deep (model units above its lowest point): the part above the
 // surface is drawn normally, the part below faintly and tinted like the water. The surface is the ground.
-window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216, groundY = null, waterline = null, format = 'image/webp', quality = 0.82 }) => {
+// `alphaLevels`: keep only this many transparency levels (much lighter files for misty, see-through models).
+// `hover`: the model floats this high above the ground (model units).
+// `bloom`: { strength, radius, tint } soft glow around the emissive parts only (eyes...).
+// `dissolve`: { height, edge } the lowest part of the model (fraction of its height) fades out through a
+// moving noise, as if it dissolved into mist; `edge` = how ragged the fade is (0..1).
+window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216, groundY = null, waterline = null,
+  hover = 0, bloom = null, dissolve = null, alphaLevels = 0, format = 'image/webp', quality = 0.82 }) => {
   if (waterline !== null) groundY = box.min.y + waterline;
+  if (hover) groundY = box.min.y - hover;
   renderer.setSize(frame * SS, frame * SS);
   // d1 faces the viewer; each next direction turns 45 degrees (see directionIndex in sprites.js)
   pivot.rotation.y = THREE.MathUtils.degToRad((dir - 1) * 45);
@@ -91,7 +186,23 @@ window.renderSheet = ({ clip, dir, frames, cols, view, frame = 256, feetY = 216,
     }
     renderer.render(scene, cam);
     renderer.clippingPlanes = [];
-    ctx.drawImage(renderer.domElement, x, y, frame, frame);
+    if (!bloom && !dissolve) {
+      ctx.drawImage(renderer.domElement, x, y, frame, frame);
+      continue;
+    }
+    // post-processing of the frame on its own canvas
+    one.width = one.height = frame;
+    const o = one.getContext('2d', { willReadFrequently: true });
+    o.drawImage(renderer.domElement, 0, 0, frame, frame);
+    if (dissolve) dissolveBottom(o, frame, feetY, view, hover, dissolve, i / frames);
+    if (bloom) addBloom(o, frame, bloom);
+    ctx.drawImage(one, x, y);
+  }
+  if (alphaLevels) {
+    const img = ctx.getImageData(0, 0, out.width, out.height);
+    const step = 255 / (alphaLevels - 1);
+    for (let i = 3; i < img.data.length; i += 4) img.data[i] = Math.round(Math.round(img.data[i] / step) * step);
+    ctx.putImageData(img, 0, 0);
   }
   return out.toDataURL(format, quality);
 };

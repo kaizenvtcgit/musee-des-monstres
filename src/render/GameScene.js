@@ -4,9 +4,10 @@ import { generateTextures } from './textures.js';
 import {
   preloadSprites, resolveMonsterTexture, realKey, directionIndex,
   createAnimations, hasAnimation, hasFlyAnimation, hasThreatAnimation, idleActions, directionalOriginY,
-  visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y,
+  visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y, monsterFx,
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
+import { MonsterFX } from './monsterfx.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
 // Habitat grounds repeat every GROUND_BLOCK tiles.
@@ -58,6 +59,7 @@ export class GameScene extends Phaser.Scene {
     this.ghost = this.add.graphics().setDepth(GHOST_DEPTH);
     this.buildingSprites = new Map();
     this.entitySprites = new Map(); // id -> { sprite, bubble, kind }
+    this.fx = new MonsterFX(this); // extra effects of some monsters (ghost mist, crossfades)
     this.lastGridVersion = -1;
     this.createSurroundings();
 
@@ -288,25 +290,27 @@ export class GameScene extends Phaser.Scene {
     return { x: entry.w.x, y: entry.w.y };
   }
 
-  // Now and then, a resting animated monster plays a one-shot action (flap its wings, look around...).
-  // Returns the action kind to play, or null for the plain idle loop.
-  // `anim`: the animation set ("kraken" or "kraken_water").
+  // Now and then, a resting animated monster plays an idle action (flap its wings, look around...), then
+  // goes back to its idle loop. Never the same action twice in a row.
+  // `anim`: the animation set ("kraken" or "kraken_water"). Returns the action kind, or null for idling.
   pickIdleAction(anim, entry, dt) {
     const actions = idleActions(this, anim);
     if (!actions.length) return null;
+    const gap = monsterFx(anim).actionGap ?? IDLE_ACTION_GAP;
     if (entry.action) {
-      const cur = entry.sprite.anims.currentAnim;
-      const done = cur && cur.key.startsWith(`${anim}-${entry.action}-`) && !entry.sprite.anims.isPlaying;
-      if (!done) return entry.action;
+      entry.actionLeft -= dt;
+      if (entry.actionLeft > 0) return entry.action;
       entry.action = null;
-      entry.actionIn = IDLE_ACTION_GAP[0] + Math.random() * (IDLE_ACTION_GAP[1] - IDLE_ACTION_GAP[0]);
+      entry.actionIn = gap[0] + Math.random() * (gap[1] - gap[0]);
       return null;
     }
-    if (entry.actionIn == null) entry.actionIn = Math.random() * IDLE_ACTION_GAP[1];
+    if (entry.actionIn == null) entry.actionIn = Math.random() * gap[1];
     entry.actionIn -= dt;
     if (entry.actionIn > 0) return null;
-    const a = actions[Math.floor(Math.random() * actions.length)];
-    entry.action = a.kind;
+    const choices = actions.length > 1 ? actions.filter((a) => a.kind !== entry.lastAction) : actions;
+    const a = choices[Math.floor(Math.random() * choices.length)];
+    entry.action = entry.lastAction = a.kind;
+    entry.actionLeft = a.duration;
     // stay put until the action is over
     if (entry.w) entry.w.rest = Math.max(entry.w.rest, a.duration + 0.2);
     return a.kind;
@@ -336,6 +340,7 @@ export class GameScene extends Phaser.Scene {
       const habitatAnim = enc && `${m.speciesId}_${enc.habitat}`;
       const anim = animated && habitatAnim && hasAnimation(this, habitatAnim) ? habitatAnim : m.speciesId;
       const swimming = anim !== m.speciesId;
+      const fx = animated ? monsterFx(m.speciesId) : {};
       if (enc) {
         ({ x, y } = this.wanderInEnclosure(m, entry, enc, dt));
       } else {
@@ -363,6 +368,7 @@ export class GameScene extends Phaser.Scene {
             // keep the stride going when only the direction changes
             const sameKind = cur && cur.key.includes(`-${kind}-`);
             const frame = sameKind ? entry.sprite.anims.currentFrame.index - 1 : 0;
+            if (fx.crossfadeMs && cur) this.fx.beginCrossfade(entry);
             entry.sprite.play({ key, startFrame: frame });
           }
           entry.sprite.anims.timeScale = world.speed || 0.0001;
@@ -381,9 +387,13 @@ export class GameScene extends Phaser.Scene {
       let shadow = [0.7, 0.7];
       if (look.directional) shadow = [1.3, 1.0];
       else if (look.real) shadow = [(entry.sprite.displayWidth / 64) * 0.9, 0.9];
-      // no shadow on the water under a swimming monster
-      entry.shadow.setVisible(!swimming);
+      // no shadow on the water under a swimming monster, nor under a ghost
+      entry.shadow.setVisible(!swimming && !fx.spectral);
       entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
+      if (fx.spectral || fx.crossfadeMs) {
+        const alpha = fx.spectral ? this.fx.spectral(m, entry, p, time, dt, time < (entry.walkUntil || 0)) : 1;
+        this.fx.applyCrossfade(entry, fx.crossfadeMs ?? 1, alpha);
+      }
       const top = look.directional ? entry.sprite.displayHeight * directionalOriginY(anim) : entry.sprite.displayHeight;
       this.setBubble(entry, m.state === 'escaped' ? 'bubble-scared' : null, p, top - 10);
     }
@@ -412,6 +422,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const [id, entry] of this.entitySprites) {
       if (alive.has(id)) continue;
+      this.fx.remove(entry);
       entry.sprite.destroy();
       if (entry.bubble) entry.bubble.destroy();
       if (entry.shadow) entry.shadow.destroy();
