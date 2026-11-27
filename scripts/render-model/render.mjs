@@ -37,6 +37,20 @@ const MODELS = {
       tail: { clip: 'TailWag', frames: 18 },         // 3 s at 6 fps
     },
   },
+  kraken: {
+    file: 'models/kraken.glb',
+    view: 1.85, // a "pocket" kraken: a bit smaller than the dragon
+    feetY: 176, // the front tentacles reach far toward the viewer: keep room below (KRAKEN origin in sprites.js)
+    still: true,
+    anims: {
+      walk: { clip: 'Crawl', frames: 16 },            // 1.6 s at 10 fps
+      idle: { clip: 'Idle', frames: 16 },             // 4 s at 4 fps
+      threat: { clip: 'Threat', frames: 15 },         // 2.5 s at 6 fps (escaped and standing)
+      look: { clip: 'Look Around', frames: 18 },      // 3.6 s at 5 fps
+      wiggle: { clip: 'Tentacle Wiggle', frames: 18 }, // 3 s at 6 fps
+      sleep: { clip: 'Sleep', frames: 20 },           // 5 s at 4 fps
+    },
+  },
 };
 
 // People: Quaternius "Ultimate Modular Men / Women" packs (CC0, https://quaternius.com).

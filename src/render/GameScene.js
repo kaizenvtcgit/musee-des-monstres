@@ -2,8 +2,8 @@ import Phaser from 'phaser';
 import { tileToScreen, screenToTile } from '../sim/iso.js';
 import { generateTextures } from './textures.js';
 import {
-  preloadSprites, resolveMonsterTexture, realKey, directionIndex, DIRECTIONAL_ORIGIN_Y,
-  createAnimations, hasAnimation, hasFlyAnimation, idleActions,
+  preloadSprites, resolveMonsterTexture, realKey, directionIndex,
+  createAnimations, hasAnimation, hasFlyAnimation, hasThreatAnimation, idleActions, directionalOriginY,
   visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y,
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
@@ -345,11 +345,12 @@ export class GameScene extends Phaser.Scene {
       if (moving) entry.walkUntil = time + 250; // short grace so tiny stops don't flicker to idle
       if (look.directional) {
         if (moving) entry.dir = directionIndex(mdx, mdy);
-        entry.sprite.setFlipX(false).setOrigin(0.5, DIRECTIONAL_ORIGIN_Y);
+        entry.sprite.setFlipX(false).setOrigin(0.5, directionalOriginY(m.speciesId));
         if (animated) {
           const walking = time < (entry.walkUntil || 0);
           let kind = walking ? (m.state === 'escaped' && hasFlyAnimation(this, m.speciesId) ? 'fly' : 'walk') : 'idle';
           if (walking) entry.action = null;
+          else if (m.state === 'escaped' && hasThreatAnimation(this, m.speciesId)) { kind = 'threat'; entry.action = null; }
           else kind = this.pickIdleAction(m, entry, dt) || kind;
           const key = `${m.speciesId}-${kind}-d${entry.dir}`;
           const cur = entry.sprite.anims.currentAnim;
@@ -376,7 +377,7 @@ export class GameScene extends Phaser.Scene {
       if (look.directional) shadow = [1.3, 1.0];
       else if (look.real) shadow = [(entry.sprite.displayWidth / 64) * 0.9, 0.9];
       entry.shadow.setPosition(p.x, p.y + (look.directional ? 1 : 6)).setDepth(p.y - 0.5).setScale(shadow[0], shadow[1]);
-      const top = look.directional ? entry.sprite.displayHeight * DIRECTIONAL_ORIGIN_Y : entry.sprite.displayHeight;
+      const top = look.directional ? entry.sprite.displayHeight * directionalOriginY(m.speciesId) : entry.sprite.displayHeight;
       this.setBubble(entry, m.state === 'escaped' ? 'bubble-scared' : null, p, top - 10);
     }
 

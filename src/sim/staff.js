@@ -41,6 +41,7 @@ export function escapeMonster(monster, enclosure, grid) {
           monster.pos = { x, y };
           monster.tile = { tx: x, ty: y };
           monster.wanderTarget = null;
+          monster.pause = 0;
           return true;
         }
       }
@@ -49,9 +50,15 @@ export function escapeMonster(monster, enclosure, grid) {
   return false;
 }
 
+// After each step, an escaped monster sometimes stops for a moment (it shows its threat animation).
+const ESCAPED_PAUSE_CHANCE = 0.25;
+const ESCAPED_PAUSE_SEC = 2.5;
+
 export function updateEscaped(monster, ctx, dt) {
   if (monster.state !== 'escaped') return;
-  if (!monster.wanderTarget) {
+  if (monster.pause > 0) {
+    monster.pause -= dt; // stops for a moment to threaten the visitors
+  } else if (!monster.wanderTarget) {
     const options = ctx.grid.neighbors4(monster.tile.tx, monster.tile.ty)
       .filter((n) => ctx.grid.getTile(n.tx, n.ty).occupant === null);
     if (options.length) monster.wanderTarget = options[Math.floor(ctx.rng() * options.length)];
@@ -59,6 +66,7 @@ export function updateEscaped(monster, ctx, dt) {
   if (monster.wanderTarget && step(monster, monster.wanderTarget, MONSTER_SPEED * dt)) {
     monster.tile = { ...monster.wanderTarget };
     monster.wanderTarget = null;
+    if (ctx.rng() < ESCAPED_PAUSE_CHANCE) monster.pause = ESCAPED_PAUSE_SEC;
   }
   for (const v of ctx.visitors) {
     if (v.state === 'gone') continue;

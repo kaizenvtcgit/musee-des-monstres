@@ -23,17 +23,19 @@ export const DECOR_URLS = Object.fromEntries(
 // "<speciesId>-<kind>-d<0..7>.png|webp". Kinds:
 // - walk, idle: required, looping;
 // - fly: optional, looping, replaces walk while the monster is escaped;
+// - threat: optional, looping, replaces idle while the monster is escaped;
 // - any other kind (flap, stretch, look, tail...): optional one-shot "idle action" played now and then at rest.
 const animFiles = import.meta.glob('../assets/anims/*.{png,webp}', { eager: true, query: '?url', import: 'default' });
 export const ANIM_URLS = Object.fromEntries(
   Object.entries(animFiles).map(([path, url]) => [path.split('/').pop().replace(/\.(png|webp)$/, ''), url]),
 );
-const LOOPING = new Set(['walk', 'idle', 'fly', 'run', 'wave']);
+const LOOPING = new Set(['walk', 'idle', 'fly', 'run', 'wave', 'threat']);
 // Playback speed of each animation (frames per second of the sampled sheet), per species.
 const ANIM_FPS = {
   default: { walk: 8, idle: 3 },
   // dragonnet: rendered from dragon_animated_v2.glb with scripts/render-model (one loop = one clip)
   dragonnet: { walk: 10, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
+  kraken: { walk: 10, idle: 4, threat: 6, look: 5, wiggle: 6, sleep: 4 },
   // every "person-..." sheet (Quaternius characters, see scripts/render-model/render.mjs)
   person: { walk: 7.2, run: 8, idle: 2.88, wave: 5.76 },
 };
@@ -92,6 +94,10 @@ export function idleActions(scene, speciesId) {
   return actionCache.get(speciesId);
 }
 
+export function hasThreatAnimation(scene, speciesId) {
+  return scene.anims.exists(`${speciesId}-threat-d0`);
+}
+
 export function hasFlyAnimation(scene, speciesId) {
   return scene.anims.exists(`${speciesId}-fly-d0`);
 }
@@ -112,6 +118,9 @@ export function realKey(scene, key) {
 // feet centre 40 px above the bottom). d0 faces +ty (screen bottom-left), each next one turns 45 deg.
 export const DIRECTIONAL_SCALE = 0.5;
 export const DIRECTIONAL_ORIGIN_Y = 216 / 256;
+// Species rendered with their feet higher in the frame (room for long front tentacles).
+const ORIGIN_Y = { kraken: 176 / 256 };
+export const directionalOriginY = (speciesId) => ORIGIN_Y[speciesId] ?? DIRECTIONAL_ORIGIN_Y;
 
 // Direction index 0..7 for a movement (dx, dy) in tile units.
 export function directionIndex(dx, dy) {
