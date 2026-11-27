@@ -4,10 +4,14 @@ import { generateTextures } from './textures.js';
 import {
   preloadSprites, resolveMonsterTexture, realKey, directionIndex, DIRECTIONAL_ORIGIN_Y,
   createAnimations, hasAnimation, hasFlyAnimation, idleActions,
+  visitorLook, hasPerson, personDirection, PERSON_ORIGIN_Y,
 } from './sprites.js';
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
+// Display scale of the 3D people (128 px frames) and how long a happy visitor waves (game seconds).
+const PERSON_SCALE = 0.5;
+const WAVE_SECONDS = 2.1;
 // Size of the barrier renders (scripts/render-model/fence.html) and the row where the ground is.
 const FENCE_IMG = { w: 128, h: 192, groundY: 134 };
 // Game seconds of plain idling between two idle actions (wing flap, look around...).
@@ -368,22 +372,24 @@ export class GameScene extends Phaser.Scene {
 
     for (const v of world.visitors) {
       alive.add(v.id);
+      const look = visitorLook(v);
       const entry = this.entry(v.id, 'visitor', `visitor-${v.variant}`);
       const p = tileToScreen(v.pos.x, v.pos.y);
-      const walking = v.state === 'walking' || v.state === 'leaving' || v.state === 'fleeing';
-      const bob = walking ? Math.abs(Math.sin(time * 0.015 + entry.phase)) * 2 : 0;
-      entry.sprite.setPosition(p.x, p.y + 6 - bob).setDepth(p.y);
+      // happy in front of a monster: wave once, then just watch
+      entry.watchT = v.state === 'watching' ? (entry.watchT ?? 0) + dt : null;
+      const still = v.state === 'watching' && v.mood === 'happy' && entry.watchT < WAVE_SECONDS ? 'wave' : 'idle';
+      const top = this.drawPerson(entry, look, v.pos, p, time, v.state === 'fleeing' ? 'run' : 'walk', still);
       let bubble = null;
       if (v.mood !== 'happy') bubble = `bubble-${v.mood}`;
       else if (v.state === 'watching') bubble = 'bubble-happy';
-      this.setBubble(entry, bubble, p, 40);
+      this.setBubble(entry, bubble, p, top);
     }
 
     for (const k of world.keepers) {
       alive.add(k.id);
       const entry = this.entry(k.id, 'keeper', 'keeper');
       const p = tileToScreen(k.pos.x, k.pos.y);
-      entry.sprite.setPosition(p.x, p.y + 6).setDepth(p.y);
+      this.drawPerson(entry, 'person-keeper', k.pos, p, time, k.state === 'chasing' ? 'run' : 'walk', 'idle');
     }
 
     for (const [id, entry] of this.entitySprites) {
@@ -393,6 +399,35 @@ export class GameScene extends Phaser.Scene {
       if (entry.shadow) entry.shadow.destroy();
       this.entitySprites.delete(id);
     }
+  }
+
+  // Draws a visitor or keeper: the animated 3D character `look` if it was rendered, else the flat drawing.
+  // `moving` / `still`: animation to play while moving / standing. Returns the height for the mood bubble.
+  drawPerson(entry, look, pos, p, time, moving, still) {
+    const dx = pos.x - (entry.lastTX ?? pos.x), dy = pos.y - (entry.lastTY ?? pos.y);
+    entry.lastTX = pos.x;
+    entry.lastTY = pos.y;
+    if (!hasPerson(this, look)) {
+      const bob = Math.hypot(dx, dy) > 0.001 ? Math.abs(Math.sin(time * 0.015 + entry.phase)) * 2 : 0;
+      entry.sprite.setPosition(p.x, p.y + 6 - bob).setDepth(p.y);
+      return 40;
+    }
+    if (Math.hypot(dx, dy) > 0.001) {
+      entry.walkUntil = time + 200; // short grace so tiny stops don't flicker to idle
+      entry.dir = personDirection(dx, dy);
+    }
+    const kind = time < (entry.walkUntil || 0) ? moving : still;
+    const key = `${look}-${this.anims.exists(`${look}-${kind}-d0`) ? kind : 'idle'}-d${entry.dir}`;
+    const cur = entry.sprite.anims.currentAnim;
+    if (!cur || cur.key !== key) {
+      const sameKind = cur && cur.key.slice(0, -3) === key.slice(0, -3);
+      entry.sprite.play({ key, startFrame: sameKind ? entry.sprite.anims.currentFrame.index - 1 : 0 });
+    }
+    entry.sprite.anims.timeScale = this.world.speed || 0.0001;
+    entry.sprite.setOrigin(0.5, PERSON_ORIGIN_Y).setScale(PERSON_SCALE).setPosition(p.x, p.y + 2).setDepth(p.y);
+    if (!entry.shadow) entry.shadow = this.add.image(0, 0, 'shadow');
+    entry.shadow.setPosition(p.x, p.y + 3).setDepth(p.y - 0.5).setScale(0.45, 0.45);
+    return 46;
   }
 
   entry(id, kind, texture) {

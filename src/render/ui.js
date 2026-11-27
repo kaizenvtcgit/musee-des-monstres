@@ -3,7 +3,7 @@ import { t } from '../i18n/index.js';
 import { BALANCE } from '../config/balance.js';
 import { SPECIES, LOCATIONS, HABITATS } from '../config/species.js';
 import { OBJECTIVES } from '../sim/objectives.js';
-import { resolveMonsterTexture, realKey } from './sprites.js';
+import { resolveMonsterTexture, realKey, visitorLook } from './sprites.js';
 import { capacity, canBreed } from '../sim/breeding.js';
 
 const TOOLS = [
@@ -69,7 +69,27 @@ class UI {
     this.refresh(true);
   }
 
+  // Portrait of a visitor: its 3D character if rendered, else the flat drawing.
+  visitorImg(v) {
+    const look = visitorLook(v);
+    return this.img(look ? look.replace(/^person-visitor/, 'visitor-') : `visitor-${v.variant}`);
+  }
+
   img(rawKey) {
+    // the flat people drawings have a 3D version: first frame of the character standing
+    const person = rawKey === 'keeper' ? 'person-keeper' : rawKey.replace(/^visitor-(\d+)$/, 'person-visitor$1');
+    const sheet = `anim-${person}-idle-d0`;
+    if (person !== rawKey && this.scene.textures.exists(sheet)) {
+      if (!this.imgCache.has(sheet)) {
+        // crop the first frame around the character (frames are 128 px, the body is in the middle)
+        const f = this.scene.textures.getFrame(sheet, 0);
+        const c = document.createElement('canvas');
+        c.width = 56; c.height = 96;
+        c.getContext('2d').drawImage(f.source.image, f.cutX + 36, f.cutY + 16, 56, 96, 0, 0, 56, 96);
+        this.imgCache.set(sheet, c.toDataURL());
+      }
+      return this.imgCache.get(sheet);
+    }
     const key = realKey(this.scene, rawKey); // prefer the realistic Blender render
     if (!this.imgCache.has(key)) this.imgCache.set(key, this.scene.textures.getBase64(key));
     return this.imgCache.get(key);
@@ -186,7 +206,7 @@ class UI {
     if (sel.kind === 'visitor') {
       const v = w.visitors.find((x) => x.id === sel.id);
       if (!v) return null;
-      return `${close}<h3><img class="portrait" src="${this.img(`visitor-${v.variant}`)}">${esc(t('visitor.title'))}</h3>
+      return `${close}<h3><img class="portrait" src="${this.visitorImg(v)}">${esc(t('visitor.title'))}</h3>
         <div class="row">${esc(t(`visitor.mood.${v.mood}`))}</div>
         <div class="row">${esc(t('visitor.satisfaction', { n: Math.round(v.satisfaction * 100) }))}${bar(v.satisfaction * 100)}</div>`;
     }

@@ -1,3 +1,6 @@
 node_modules
 dist
 .superpowers
+
+# 3D people (Quaternius packs, ~60 MB): download them, see scripts/render-model/render.mjs
+models/people/

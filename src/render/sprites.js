@@ -28,13 +28,20 @@ const animFiles = import.meta.glob('../assets/anims/*.{png,webp}', { eager: true
 export const ANIM_URLS = Object.fromEntries(
   Object.entries(animFiles).map(([path, url]) => [path.split('/').pop().replace(/\.(png|webp)$/, ''), url]),
 );
-const LOOPING = new Set(['walk', 'idle', 'fly']);
+const LOOPING = new Set(['walk', 'idle', 'fly', 'run', 'wave']);
 // Playback speed of each animation (frames per second of the sampled sheet), per species.
 const ANIM_FPS = {
   default: { walk: 8, idle: 3 },
   // dragonnet: rendered from dragon_animated_v2.glb with scripts/render-model (one loop = one clip)
   dragonnet: { walk: 10, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
+  // every "person-..." sheet (Quaternius characters, see scripts/render-model/render.mjs)
+  person: { walk: 7.2, run: 8, idle: 2.88, wave: 5.76 },
 };
+
+// People are rendered smaller (128 px frames, feet 108 px down) and only in the 4 path directions.
+export const PERSON_FRAME = 128;
+export const PERSON_ORIGIN_Y = 108 / 128;
+const isPerson = (name) => name.startsWith('person-');
 
 function parseAnimName(name) {
   const m = name.match(/^(.+)-([a-z]+)-d(\d)$/);
@@ -42,6 +49,7 @@ function parseAnimName(name) {
 }
 
 function fpsOf(species, kind) {
+  if (isPerson(species)) return ANIM_FPS.person[kind] ?? 6;
   return ANIM_FPS[species]?.[kind] ?? ANIM_FPS.default[kind] ?? 6;
 }
 
@@ -49,7 +57,8 @@ export function preloadSprites(scene) {
   for (const [name, url] of Object.entries(SPRITE_URLS)) scene.load.image(`real-${name}`, url);
   for (const [name, url] of Object.entries(DECOR_URLS)) scene.load.image(`img-${name}`, url);
   for (const [name, url] of Object.entries(ANIM_URLS)) {
-    scene.load.spritesheet(`anim-${name}`, url, { frameWidth: 256, frameHeight: 256 });
+    const size = isPerson(name) ? PERSON_FRAME : 256;
+    scene.load.spritesheet(`anim-${name}`, url, { frameWidth: size, frameHeight: size });
   }
 }
 
@@ -129,4 +138,27 @@ export function resolveMonsterTexture(scene, monster, dir = 0) {
     return { key: `real-${base}`, tint: monster.rare ? RARE_FALLBACK_TINT : null, real: true, scale: SPRITE_SCALE[base] };
   }
   return { key: `monster-${base}${monster.rare ? '-rare' : ''}`, tint: null, real: false, scale: 1 };
+}
+
+// ---- people ----------------------------------------------------------------
+
+const VISITOR_LOOKS = [...new Set(Object.keys(ANIM_URLS)
+  .map((n) => n.match(/^(person-visitor\d+)-walk-d0$/)?.[1]).filter(Boolean))].sort();
+
+// The 3D look of a visitor ("person-visitor3"), always the same for a given visitor; null if none rendered.
+export function visitorLook(visitor) {
+  if (!VISITOR_LOOKS.length) return null;
+  let h = 0;
+  for (const c of String(visitor.id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return VISITOR_LOOKS[h % VISITOR_LOOKS.length];
+}
+
+export function hasPerson(scene, look) {
+  return !!look && scene.anims.exists(`${look}-walk-d0`) && scene.anims.exists(`${look}-idle-d0`);
+}
+
+// People only have the 4 path directions (even indices): snap any direction to one of them.
+export function personDirection(dx, dy) {
+  const deg = (Math.atan2(dx, dy) * 180) / Math.PI;
+  return ((Math.round(deg / 90) % 4) + 4) % 4 * 2;
 }
