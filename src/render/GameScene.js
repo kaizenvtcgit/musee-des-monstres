@@ -9,6 +9,7 @@ import {
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { straightLine, pathLineCost } from './pathline.js';
 import { shelterSpots, stepShelterVisit, partlyInCave, shelterOverhang } from './shelterpath.js';
+import { canStepOver } from './stepover.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 
 const fmtCost = (n) => Math.round(n).toLocaleString('fr-FR');
@@ -472,7 +473,9 @@ export class GameScene extends Phaser.Scene {
       if (o && o.w && o.wEnc === e.id) others.push(o.w);
     }
     // big decorations are obstacles too (the low ones are walked over), and the shelter
-    for (const d of e.decor ?? []) if (!ENCLOSURE_DECOR[d.type]?.low) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
+    // (the ones low for its size are stepped over: src/render/stepover.js)
+    const floats = !!monsterFx(m.speciesId).spectral;
+    for (const d of e.decor ?? []) if (!canStepOver(d.type, m.speciesId, floats)) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     const sh = e.shelter;
     const shN = shelterSize(sh), shHalf = (shN - 1) / 2;
     if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: SHELTER_RADIUS * (shN / 2) + shelterOverhang(sh.family) });

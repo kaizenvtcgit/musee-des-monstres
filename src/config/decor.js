@@ -52,6 +52,19 @@ export const ENCLOSURE_DECOR = {
   expeditionFlag: { id: 'expeditionFlag', habitat: 'summit', price: 150 },
 };
 
+// Height of each decoration in metres (measured on its render): a monster steps over the ones that are
+// low for its own size (see src/render/stepover.js) and walks around the others.
+export const DECOR_HEIGHT = {
+  lavaRock: 0.44, fumarole: 0.33, obsidian: 0.73, mossRocks: 0.38, reeds: 0.95, sunkenChest: 0.38,
+  gothicStatue: 1.05, lantern: 0.58, glowMushrooms: 0.5, mossStump: 0.28, fern: 0.33, deadTrunk: 0.35,
+  iceBlock: 0.6, snowyFir: 1.15, frostRock: 0.44, charredStump: 0.26, smokingRock: 0.49, emberPile: 0.26,
+  basaltColumns: 0.86, ochreRock: 0.44, stoneStack: 0.37, coral: 0.55, giantShell: 0.23, anemones: 0.35,
+  jellyfish: 0.46, whaleStatue: 0.81, vents: 0.46, rottenTrunk: 0.45, roots: 0.44, wisps: 0.76,
+  tombstone: 0.54, stoneCross: 0.68, deadTree: 1.2, brokenColumn: 0.85, horseStatue: 0.78, mossBlock: 0.47,
+  amethyst: 0.97, aquamarine: 0.58, stalagmites: 0.76, frozenShrub: 1.2, frozenStump: 0.27, cairn: 0.63,
+  snowRock: 0.72, iceSpikes: 0.79, expeditionFlag: 1.1,
+};
+
 // The shelter of each monster family (2 x 2 tiles), image src/assets/decor/shelter-<family>.png.
 export const SHELTERS = {
   lava: 'volcanicLair', water: 'seaCave', dark: 'mausoleum', forest: 'mossMound', ice: 'iceCave',
