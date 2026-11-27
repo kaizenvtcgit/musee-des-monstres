@@ -197,13 +197,13 @@ export class GameScene extends Phaser.Scene {
     if (this.textures.exists(animKey)) {
       const src = this.textures.get(animKey).getSourceImage();
       const n = src.width / 4 / 128, frames = 4 * Math.round(src.height / 64 / n);
-      const anim = { n, frames, bx: tx % n, by: ty % n };
+      const anim = { n, frames, bx: ((tx % n) + n) % n, by: ((ty % n) + n) % n };
       return { key: animKey, frame: GameScene.animFrame(anim, this.groundFrame ?? 0), anim };
     }
     const key = `img-tile-${name}-sheet`;
     if (!this.textures.exists(key)) return null;
     const n = Math.round(Math.sqrt(this.textures.get(key).frameTotal - 1)); // frameTotal counts __BASE
-    return { key, frame: (ty % n) * n + (tx % n) };
+    return { key, frame: (((ty % n) + n) % n) * n + (((tx % n) + n) % n) }; // tx, ty < 0 around the park
   }
 
   static animFrame({ n, frames, bx, by }, f) {

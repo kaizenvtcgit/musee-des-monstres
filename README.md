@@ -54,6 +54,23 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
   « Individual Characters » des packs [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html)
   et [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html) dans `models/people/men/` et `models/people/women/`.
 
+## Visite 3D
+
+Le bouton « 🚶 Visite 3D » (barre du haut) fait marcher le joueur dans le musée, à la première personne,
+en vraie 3D (three.js, `src/render3d/visit.js`) : le parc est reconstruit à partir de la partie en cours
+(pelouse, allées, sols des enclos, murs avec grilles ou vitres, bâtiments, forêt), et les monstres 3D,
+les visiteurs et les gardiens se déplacent là où le jeu 2D les place. Le jeu continue pendant la visite.
+
+- Z Q S D (ou W A S D) ou flèches : marcher · Maj : courir · souris : regarder (clic pour capturer la souris)
+  · Échap : quitter. Sur écran tactile : pouce gauche pour marcher, pouce droit pour regarder.
+- Ce code et ses fichiers (≈ 8 Mo) ne sont téléchargés qu'au lancement de la visite.
+- `src/assets/3d/*.gltf.json` : copies allégées des monstres (`models/*.glb`) et de 7 personnages Quaternius
+  (textures 1024 px en WebP, maillages simplifiés et compressés « meshopt », animations utiles seulement),
+  converties en glTF JSON autonome par `scripts/3d/glb-to-json.mjs` (certains hébergeurs ne servent pas les .glb).
+  Pour les refaire : `npx @gltf-transform/cli optimize models/<m>.glb out.glb --texture-compress webp
+  --texture-size 1024 --compress meshopt --simplify-ratio 0.5 --simplify-error 0.002`, puis le script ci-dessus.
+- `src/assets/3d/tex/` : textures de sol et de mur (ambientCG, CC0) en 512 px.
+
 ## Crédits
 
 - Décorations d'enclos : modèles 3D de [Poly Haven](https://polyhaven.com) (licence CC0).
