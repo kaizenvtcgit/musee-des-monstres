@@ -32,6 +32,7 @@ export function serializeWorld(w) {
       nextId: w.builder.nextId,
       enclosures: clone([...w.builder.enclosures.values()]),
       buildings: clone([...w.builder.buildings.values()]),
+      bridges: clone([...w.builder.bridges.values()]),
     },
     monsters: clone([...w.monsters.values()]),
     visitors: clone(w.visitors),
@@ -68,6 +69,7 @@ export function deserializeWorld(data) {
   w.builder.nextId = data.builder.nextId;
   for (const e of data.builder.enclosures) w.builder.enclosures.set(e.id, e);
   for (const b of data.builder.buildings) w.builder.buildings.set(b.id, b);
+  for (const b of data.builder.bridges ?? []) w.builder.bridges.set(b.id, b);
   for (const m of data.monsters) w.monsters.set(m.id, m);
   w.visitors.push(...data.visitors);
   w.keepers.push(...data.keepers);

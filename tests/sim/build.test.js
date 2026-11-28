@@ -159,3 +159,101 @@ describe('Builder', () => {
     expect(builder.accessTiles(r.id)).toEqual([{ tx: 4, ty: 2 }, { tx: 4, ty: 3 }]);
   });
 });
+
+describe('bridges', () => {
+  const row = (x0, x1, y) => Array.from({ length: x1 - x0 + 1 }, (_, i) => ({ tx: x0 + i, ty: y }));
+  // a lava enclosure on x 3..6, y 4..6 and a path on each side of row 5
+  function crossing(money = 5000, habitat = 'lava') {
+    const s = setup(money);
+    s.builder.placeEnclosure(3, 4, 6, 6, habitat);
+    s.builder.placePath(2, 5);
+    s.builder.placePath(7, 5);
+    return s;
+  }
+
+  it('placeBridge lays deck and end paths and spends the cost', () => {
+    const { grid, wallet, builder } = crossing();
+    const before = wallet.money;
+    const r = builder.placeBridge([{ tx: 4, ty: 3 }, ...[4, 5, 6].map((ty) => ({ tx: 4, ty })), { tx: 4, ty: 7 }]);
+    expect(r.ok).toBe(true);
+    expect(r.cost).toBe(3 * 50 + 2 * 10);
+    expect(wallet.money).toBe(before - 170);
+    for (const ty of [4, 5, 6]) expect(grid.getTile(4, ty).bridge).toBe(r.id);
+    expect(grid.getTile(4, 5).occupant).toMatch(/^enc/); // still the enclosure's, under the bridge
+    expect(grid.isPath(4, 3) && grid.isPath(4, 7)).toBe(true);
+    expect(builder.bridges.get(r.id).stairs).toEqual([{ tx: 4, ty: 3, dx: 0, dy: 1 }, { tx: 4, ty: 7, dx: 0, dy: -1 }]);
+  });
+
+  it('placeBridge refuses without money and lays nothing', () => {
+    const { grid, wallet, builder } = crossing(1000);
+    wallet.money = 100;
+    const r = builder.placeBridge(row(2, 7, 5));
+    expect(r).toMatchObject({ ok: false, reason: 'noMoney' });
+    expect(grid.isBridge(4, 5)).toBe(false);
+    expect(builder.bridges.size).toBe(0);
+  });
+
+  it('placeBridge reports the reason of a bad trace', () => {
+    const { builder } = crossing();
+    expect(builder.placeBridge(row(2, 5, 5))).toMatchObject({ ok: false, reason: 'bridgeEnds' });
+  });
+
+  it('demolish on a bridge tile removes the whole bridge and refunds half', () => {
+    const { grid, wallet, builder } = crossing();
+    builder.placeBridge(row(2, 7, 5));
+    const before = wallet.money;
+    expect(builder.demolish(4, 5).ok).toBe(true);
+    expect(wallet.money).toBe(before + 100);
+    expect(row(3, 6, 5).some((c) => grid.isBridge(c.tx, c.ty))).toBe(false);
+    expect(builder.bridges.size).toBe(0);
+    expect(grid.isPath(2, 5) && grid.isPath(7, 5)).toBe(true);
+    expect(builder.enclosures.size).toBe(1);
+  });
+
+  it('demolish on a stair removes the bridge first, the path stays', () => {
+    const { grid, builder } = crossing();
+    builder.placeBridge(row(2, 7, 5));
+    expect(builder.demolish(2, 5).ok).toBe(true);
+    expect(builder.bridges.size).toBe(0);
+    expect(grid.isPath(2, 5)).toBe(true);
+  });
+
+  it('demolishing the enclosure first removes its bridges', () => {
+    const { grid, wallet, builder } = crossing();
+    builder.placeBridge(row(2, 7, 5));
+    const before = wallet.money;
+    expect(builder.demolish(3, 4).ok).toBe(true);
+    expect(builder.enclosures.size).toBe(0);
+    expect(builder.bridges.size).toBe(0);
+    expect(grid.tiles.some((t) => t.bridge)).toBe(false);
+    expect(wallet.money).toBe(before + 100 + 12 * 50 * 0.5);
+  });
+
+  it('placeShelter refuses under a bridge', () => {
+    const { builder } = setup();
+    builder.placeEnclosure(3, 3, 7, 7, 'lava');
+    builder.placePath(2, 5);
+    builder.placePath(8, 5);
+    expect(builder.placeBridge(row(2, 8, 5)).ok).toBe(true);
+    expect(builder.placeShelter(4, 4)).toMatchObject({ ok: false, reason: 'underBridge' });
+    expect(builder.placeShelter(3, 6).ok).toBe(false); // 3..5 x 6..8 leaves the enclosure: another reason
+    expect(builder.placeShelter(4, 2).ok).toBe(false);
+  });
+
+  it('placeDecor refuses a tall decoration under a bridge, accepts a low one', () => {
+    const lava = crossing();
+    lava.builder.placeBridge(row(2, 7, 5));
+    expect(lava.builder.placeDecor(4, 5, 'lavaRock')).toMatchObject({ ok: false, reason: 'underBridge' });
+    expect(lava.builder.placeDecor(4, 4, 'lavaRock').ok).toBe(true);
+    const water = crossing(5000, 'water');
+    water.builder.placeBridge(row(2, 7, 5));
+    expect(water.builder.placeDecor(4, 5, 'reeds').ok).toBe(true);
+  });
+
+  it('accessTiles includes bridge tiles', () => {
+    const { builder } = crossing();
+    const encId = [...builder.enclosures.keys()][0];
+    builder.placeBridge(row(2, 7, 5));
+    expect(builder.accessTiles(encId)).toContainEqual({ tx: 4, ty: 5 });
+  });
+});

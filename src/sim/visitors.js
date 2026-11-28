@@ -248,7 +248,9 @@ function arrive(v, ctx) {
     const e = ctx.builder.enclosures.get(target.id);
     const total = e ? enclosureAppeal(e, ctx) : null;
     if (total !== null) {
-      v.satisfaction = Math.min(1, v.satisfaction + total / 50);
+      // from a bridge, right above the monsters: more
+      const view = ctx.grid.isBridge(v.tile.tx, v.tile.ty) ? 1 + BALANCE.bridgeViewBonus : 1;
+      v.satisfaction = Math.min(1, v.satisfaction + (total / 50) * view);
       v.state = 'watching';
       v.timer = WATCH_SEC * (1 + decorCount(e) * BALANCE.decorWatch);
     } else {

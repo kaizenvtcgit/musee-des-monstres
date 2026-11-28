@@ -3,6 +3,7 @@ import { ENCLOSURE_DECOR } from '../config/decor.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { rectsOf, containsTile, tilesOf, fitBox } from './enclosure.js';
 import { turns, faceToPath } from './facing.js';
+import { checkBridge } from './bridge.js';
 
 const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
@@ -43,6 +44,42 @@ export class Builder {
     this.protectedTiles = new Set();
     // Set by World: called when enclosure `fromId` was merged into `toId` (its monsters move over).
     this.onEnclosuresMerged = () => {};
+    // Bridges over enclosures (src/sim/bridge.js): id -> { id, deck: [{tx,ty}], stairs: [{tx,ty,dx,dy}], price }.
+    this.bridges = new Map();
+    // Set by World: called with a bridge just taken down (who stood on it gets off).
+    this.onBridgeRemoved = () => {};
+  }
+
+  // A bridge along the trace drawn tile by tile (see checkBridge): its deck over the enclosures, paths on
+  // the grass tiles of the trace.
+  placeBridge(trace) {
+    const r = checkBridge(this.grid, this, trace);
+    if (!r.ok) return fail(r.reason);
+    if (!this.wallet.spend(r.cost)) return fail('noMoney');
+    for (const c of r.paths) this.grid.setGround(c.tx, c.ty, 'path');
+    const id = `brg${this.nextId++}`;
+    for (const c of r.deck) this.grid.setBridge(c.tx, c.ty, id);
+    this.bridges.set(id, { id, deck: r.deck, stairs: r.stairs, price: r.deck.length * BALANCE.bridgeCostPerTile });
+    return { ok: true, id, cost: r.cost };
+  }
+
+  // Takes the whole bridge down (paid back like the rest); the paths at its ends stay. Returns its deck size.
+  removeBridge(id) {
+    const b = this.bridges.get(id);
+    if (!b) return 0;
+    for (const c of b.deck) this.grid.setBridge(c.tx, c.ty, null);
+    this.bridges.delete(id);
+    this.wallet.earn(b.price * BALANCE.demolishRefund);
+    this.onBridgeRemoved(b);
+    return b.deck.length;
+  }
+
+  // The bridge whose deck or stairs are on this tile, or null.
+  bridgeAt(tx, ty) {
+    const id = this.grid.getTile(tx, ty)?.bridge;
+    if (id) return this.bridges.get(id) ?? null;
+    for (const b of this.bridges.values()) if (b.stairs.some((s) => s.tx === tx && s.ty === ty)) return b;
+    return null;
   }
 
   placePath(tx, ty) {
@@ -123,6 +160,7 @@ export class Builder {
     if (e.habitat !== def.habitat) return fail('wrongDecorHabitat');
     e.decor ??= [];
     if (e.decor.some((d) => d.tx === tx && d.ty === ty) || this.shelterAt(tx, ty)) return fail('occupied');
+    if (!def.low && this.grid.isBridge(tx, ty)) return fail('underBridge');
     if (!this.wallet.spend(def.price)) return fail('noMoney');
     const id = `dec${this.nextId++}`;
     const d = { id, type, tx, ty, price: def.price };
@@ -145,6 +183,7 @@ export class Builder {
     // every one of its n x n tiles in the enclosure (a merged enclosure is not always a rectangle)
     for (let dx = 0; dx < n; dx++) for (let dy = 0; dy < n; dy++) if (!containsTile(e, tx + dx, ty + dy)) return fail('shelterOutside');
     for (const d of e.decor ?? []) if (d.tx >= tx && d.tx < tx + n && d.ty >= ty && d.ty < ty + n) return fail('occupied');
+    for (let dx = 0; dx < n; dx++) for (let dy = 0; dy < n; dy++) if (this.grid.isBridge(tx + dx, ty + dy)) return fail('underBridge');
     if (!this.wallet.spend(BALANCE.shelterCost)) return fail('noMoney');
     e.shelter = { id: `she${this.nextId++}`, family: HABITAT_FAMILY[e.habitat], tx, ty, size: n, rot: turns(rot ?? 0), price: BALANCE.shelterCost, occupant: null };
     this.grid.version++; // redraw
@@ -200,6 +239,12 @@ export class Builder {
     const tile = this.grid.getTile(tx, ty);
     if (!tile) return fail('outOfBounds');
     const id = tile.occupant;
+    // a bridge goes first (its deck or one of its stairs), before what is under it
+    const bridge = this.bridgeAt(tx, ty);
+    if (bridge) {
+      this.removeBridge(bridge.id);
+      return { ok: true, id: bridge.id };
+    }
     // a decoration goes first, before its enclosure
     const found = this.decorAt(tx, ty);
     if (found) {
@@ -219,6 +264,8 @@ export class Builder {
       const e = this.enclosures.get(id);
       if (e.monsterIds.length && !this.onEnclosureEmptied([...e.monsterIds])) return fail('enclosureNotEmpty');
       e.monsterIds = [];
+      // the bridges over it come down first
+      for (const br of [...this.bridges.values()]) if (br.deck.some((c) => containsTile(e, c.tx, c.ty))) this.removeBridge(br.id);
       this.enclosures.delete(id);
       for (const r of rectsOf(e)) this.#fillRect(r.x0, r.y0, r.x1, r.y1, null);
       const decorPrice = (e.decor ?? []).reduce((s, d) => s + d.price, 0) + (e.shelter?.price ?? 0);
@@ -261,6 +308,8 @@ export class Builder {
         seen.add(`${x},${y}`);
         if (this.grid.isPath(x, y)) out.push({ tx: x, ty: y });
       }
+      // an enclosure is also watched from the bridges over it
+      if (this.enclosures.has(id) && this.grid.isBridge(t.tx, t.ty)) out.push({ tx: t.tx, ty: t.ty });
     }
     return out.sort((a, b) => a.tx - b.tx || a.ty - b.ty);
   }

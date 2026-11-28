@@ -94,3 +94,16 @@ describe('enclosure merging', () => {
     expect(w.builder.enclosures.get(a.id).monsterIds).toContain('mX');
   });
 });
+
+describe('merging under a bridge', () => {
+  it('bridge tiles keep their bridge after a merge', () => {
+    const { grid, builder } = setup();
+    builder.placeEnclosure(3, 4, 6, 6, 'lava');
+    builder.placePath(2, 5);
+    builder.placePath(7, 5);
+    const r = builder.placeBridge([2, 3, 4, 5, 6, 7].map((tx) => ({ tx, ty: 5 })));
+    expect(r.ok).toBe(true);
+    expect(builder.placeEnclosure(3, 7, 6, 9, 'lava').merged).toBe(true);
+    for (const tx of [3, 4, 5, 6]) expect(grid.getTile(tx, 5).bridge).toBe(r.id);
+  });
+});

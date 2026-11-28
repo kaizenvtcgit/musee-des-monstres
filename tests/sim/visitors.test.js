@@ -130,3 +130,24 @@ describe('visitors', () => {
     expect(['leaving', 'gone']).toContain(v.state);
   });
 });
+
+describe('watching from a bridge', () => {
+  it('gives the bonus', () => {
+    const gain = (onBridge) => {
+      const ctx = setup();
+      const id = addEnclosure(ctx, 5, 6, 8, 9, 'golem', 'forest');
+      ctx.builder.placePath(4, 7);
+      ctx.builder.placePath(9, 7);
+      expect(ctx.builder.placeBridge([4, 5, 6, 7, 8, 9].map((tx) => ({ tx, ty: 7 }))).ok).toBe(true);
+      const tile = onBridge ? { tx: 6, ty: 7 } : { tx: 6, ty: 10 };
+      const v = createVisitor(tile);
+      v.satisfaction = 0;
+      v.target = { kind: 'enclosure', id, tile };
+      v.path = [];
+      updateVisitor(v, ctx, 0.1);
+      expect(v.state).toBe('watching');
+      return v.satisfaction;
+    };
+    expect(gain(true)).toBeCloseTo(gain(false) * 1.25, 5);
+  });
+});
