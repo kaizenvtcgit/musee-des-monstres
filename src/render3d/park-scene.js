@@ -224,8 +224,50 @@ export class ParkScene {
       m.emissive = new THREE.Color(0xff5a10);
       m.emissiveIntensity = 3;
       this.lavaMats = [...(this.lavaMats ?? []), m];
+      this.flowing(m, 'lava');
     }
     return m;
+  }
+
+  // A living ground, moved in its shader by the shared clock this.flowTime (see update):
+  // - 'lava': the molten crust slowly flows and churns (its colour, glow and relief move together);
+  // - 'water': two sets of ripples crossing each other at different speeds.
+  flowing(m, kind) {
+    this.flowTime ??= { value: 0 };
+    const time = this.flowTime;
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uFlowTime = time;
+      const fn = kind === 'lava'
+        ? `uniform float uFlowTime;
+vec2 flowUv(vec2 uv) {
+  float t = uFlowTime;
+  return uv + vec2(t * 0.018, t * 0.011)
+    + 0.035 * vec2(sin(uv.y * 5.3 + t * 0.55), cos(uv.x * 4.7 + t * 0.47))
+    + 0.012 * vec2(sin(uv.y * 13.0 - t * 0.9), sin(uv.x * 11.0 + t * 0.8));
+}
+`
+        : `uniform float uFlowTime;
+`;
+      // the chunks are still "#include <...>" here: put their code in, to change it
+      sh.fragmentShader = fn + sh.fragmentShader;
+      for (const chunk of ['map_fragment', 'emissivemap_fragment', 'normal_fragment_maps']) {
+        sh.fragmentShader = sh.fragmentShader.replace(`#include <${chunk}>`, THREE.ShaderChunk[chunk]);
+      }
+      if (kind === 'lava') {
+        sh.fragmentShader = sh.fragmentShader
+          .replace('texture2D( map, vMapUv )', 'texture2D( map, flowUv( vMapUv ) )')
+          .replace('texture2D( emissiveMap, vEmissiveMapUv )', 'texture2D( emissiveMap, flowUv( vEmissiveMapUv ) )')
+          .replace('vec3 mapN = texture2D( normalMap, vNormalMapUv )', 'vec3 mapN = texture2D( normalMap, flowUv( vNormalMapUv ) )');
+      } else {
+        sh.fragmentShader = sh.fragmentShader.replace(
+          'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
+          `vec3 mapN = normalize(
+    ( texture2D( normalMap, vNormalMapUv + vec2( uFlowTime * 0.06, uFlowTime * 0.035 ) ).xyz * 2.0 - 1.0 )
+    + ( texture2D( normalMap, vNormalMapUv * 2.6 + vec2( -uFlowTime * 0.09, uFlowTime * 0.12 ) ).xyz * 2.0 - 1.0 ) * 0.8 );`,
+        );
+      }
+    };
+    m.customProgramCacheKey = () => `flow-${kind}`;
   }
 
   // a tileable wavy normal map, drawn once
@@ -308,9 +350,10 @@ export class ParkScene {
         group.add(bottom);
         const n = this.waterNormals();
         const m = new THREE.MeshPhysicalMaterial({
-          color: WATERS[k], roughness: 0.06, metalness: 0, transmission: 0, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6),
+          color: WATERS[k], roughness: 0.06, metalness: 0, transmission: 0, normalMap: n, normalScale: new THREE.Vector2(1.1, 1.1),
           transparent: true, opacity: 0.88, envMapIntensity: 1.2,
         });
+        this.flowing(m, 'water');
         this.waterMats.push(m);
         const surf = new THREE.Mesh(this.quads(tiles, -0.12, 6), m);
         surf.receiveShadow = true;
@@ -1156,8 +1199,8 @@ export class ParkScene {
     this.syncMonsters(dt);
     this.syncPeople(dt);
     this.updateEggs(time);
-    // living grounds: water ripples, glowing lava breathing
-    if (this.waterNormal) this.waterNormal.offset.set(time * 0.012, time * 0.007);
+    // living grounds: water ripples and flowing lava (flowing), glowing lava breathing
+    if (this.flowTime) this.flowTime.value = time - (this.flowT0 ??= time); // from the start: small numbers for the shader
     for (const m of this.lavaMats ?? []) m.emissiveIntensity = 3 + Math.sin(time * 1.3) * 0.5 + Math.sin(time * 3.1) * 0.15;
     // the sun's shadows cover the square around the focus
     const c = this.sun.shadow.camera, s = this.shadowSize;
