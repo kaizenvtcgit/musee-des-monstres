@@ -107,6 +107,10 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   vides utiles, comme les `EggSlot` de l'incubateur), puis le script ci-dessus.
 - `props.glb.json` : une scène nommée par objet (`entranceGate`, `firTree`, `pineTree`, `pineTreeLow` — le pin très
   simplifié des arbres lointains —, `parkBench`, `streetLamp`, `trashCan`, `pottedPlant`, `shrub`, `planterBox`).
+- `shelters.glb.json` : les 5 abris (`shelter-lava`, `-water`, `-forest`, `-ice`, `-dark`), modelés dans Blender
+  (`models/blender/musee-decors.blend`, scène `MuseeShelters`) pour 3 × 3 cases, leurs matières précalculées en
+  textures (couleur, relief, lueur), avec une vraie grotte creusée où le monstre entre. Le jeu les met à l'échelle
+  de leur monstre (`SHELTER_MODEL_SCALE`, `src/render/shelterpath.js`).
 - `src/assets/3d/tex/` : textures de sol et de mur (ambientCG, CC0) en 512 px.
 - Les personnes ne sont pas dans `models/` (trop lourdes) : les originaux sont les dossiers glTF « Individual
   Characters » des packs [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html)

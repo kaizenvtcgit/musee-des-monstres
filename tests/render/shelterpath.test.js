@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { shelterSpots, stepShelterVisit, partlyInCave } from '../../src/render/shelterpath.js';
+import { shelterSpots, stepShelterVisit, shelterRadius } from '../../src/render/shelterpath.js';
 
-// a 3 x 3 shelter on tiles 4..6 x 4..6: its mouth faces +y (down-left on screen)
-const sh = { tx: 4, ty: 4 };
+// a 3 x 3 dragon shelter on tiles 4..6 x 4..6: its mouth faces +y
+const sh = { tx: 4, ty: 4, family: 'lava' };
 const spots = shelterSpots(sh, 3);
-const inFootprint = (p) => p.x > 3.5 && p.x < 6.5 && p.y > 3.5 && p.y < 6.5;
+const r = spots.rect;
+const inFootprint = (p) => p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1; // the rock
 
 function run(v, want, seconds, onStep) {
   for (let i = 0; i < seconds * 20; i++) {
@@ -74,20 +75,17 @@ describe('stepShelterVisit', () => {
     expect(v.y).toBeCloseTo(spots.front.y, 5);
   });
 
-  it('resting at the entrance it is partly in the cave (behind the rock front); walking around, it is not', () => {
-    const v = { stage: null, x: 8, y: 9 };
-    const r = run(v, 'entrance', 30);
-    expect(partlyInCave(r, spots, v.y, 0.6)).toBe(true);
-    const out = { stage: null, x: 8, y: 9 };
-    const r2 = stepShelterVisit(out, spots, 'inside', 0.7, 0.05); // just starting to go around the rock
-    expect(partlyInCave(r2, spots, out.y, 0.6)).toBe(false);
-  });
-
   it('the big ice cave reaches further out: its front spot is still outside the rock, its mouth under the arch', () => {
     const s = shelterSpots({ tx: 4, ty: 4, family: 'ice' }, 3);
     expect(s.front.y).toBeGreaterThan(s.faceY);
     expect(s.mouth.y).toBeLessThan(s.faceY);
     expect(s.front.y).toBeGreaterThan(s.rect.y1);
+  });
+
+  it('each cave is scaled to its monster: the golem cave is bigger than the dragon one, both fit their 3 x 3 tiles', () => {
+    const golem = shelterRadius({ family: 'forest' }, 3), dragon = shelterRadius({ family: 'lava' }, 3);
+    expect(golem).toBeGreaterThan(dragon);
+    expect(golem).toBeLessThan(1.5);
   });
 
   it('called off on the way: it simply stops where it is', () => {

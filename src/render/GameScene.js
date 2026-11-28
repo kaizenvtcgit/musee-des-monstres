@@ -7,7 +7,7 @@ import {
 import { createWanderer, stepWander, findFreeSpot } from './wander.js';
 import { eventSounds } from './monsterfx.js';
 import { straightLine, pathLineCost } from './pathline.js';
-import { shelterSpots, stepShelterVisit, shelterOverhang } from './shelterpath.js';
+import { shelterSpots, stepShelterVisit, shelterRadius } from './shelterpath.js';
 import { canStepOver } from './stepover.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 import { t as tr } from '../i18n/index.js';
@@ -18,10 +18,9 @@ import { HABITAT_FAMILY, habitatFits } from '../config/species.js';
 import { rectsOf, containsTile } from '../sim/enclosure.js';
 import { capacity } from '../sim/breeding.js';
 
-// Room the decorations take for the monsters walking around them (tile units), and the shelter's
-// (where its entrance is and the walk into the cave: src/render/shelterpath.js).
+// Room the decorations take for the monsters walking around them (tile units); the shelter's room and the
+// walk into its cave: src/render/shelterpath.js.
 const DECOR_RADIUS = 0.32;
-const SHELTER_RADIUS = 0.8;
 // How long a happy visitor waves (game seconds).
 const WAVE_SECONDS = 2.1;
 // Game seconds of plain idling between two idle actions (wing flap, look around...).
@@ -89,7 +88,7 @@ export class GameScene extends Phaser.Scene {
     for (const d of e.decor ?? []) if (!canStepOver(d.type, m.speciesId, !!fx.floats)) others.push({ x: d.tx, y: d.ty, r: DECOR_RADIUS });
     const sh = e.shelter;
     const shN = shelterSize(sh), shHalf = (shN - 1) / 2;
-    if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: SHELTER_RADIUS * (shN / 2) + shelterOverhang(sh.family) });
+    if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: shelterRadius(sh, shN) });
     // its enclosure was just merged into this one: it keeps walking from where it is
     if (entry.w && entry.wEnc !== e.id && !this.world.builder.enclosures.has(entry.wEnc)) entry.wEnc = e.id;
     if (!entry.w || entry.wEnc !== e.id) {

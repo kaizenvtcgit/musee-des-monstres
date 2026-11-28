@@ -10,6 +10,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { tilesOf, containsTile } from '../sim/enclosure.js';
 import { shelterSize } from '../sim/build.js';
+import { SHELTER_MODEL_SCALE } from '../render/shelterpath.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
@@ -528,6 +529,7 @@ export class ParkScene {
     this.s3.add(group);
     const byNode = new Map();
     const add = (name, m) => (byNode.get(name) ?? byNode.set(name, []).get(name)).push(m);
+    const shelters = [];
     const WATER_Y = -0.12, BOTTOM = -0.9;
     for (const e of this.world.builder.enclosures.values()) {
       const wet = WATERS[e.habitat] !== undefined;
@@ -539,11 +541,26 @@ export class ParkScene {
         add(d.type, { tx: d.tx, ty: d.ty, rot: v ? THREE.MathUtils.degToRad(140) : 0, y });
       }
       const sh = e.shelter;
-      // its n x n tiles (2 or 3), its entrance toward +y (+z here); the models are made for 2 x 2
+      // centred on its n x n tiles (3, or 2 for an old one), its entrance toward +y (+z here): a model of
+      // shelters.glb (made for 3 x 3 tiles, models/blender/musee-decors.blend), scaled to its monster
       if (sh) {
         const n = shelterSize(sh);
-        add(`shelter-${sh.family}`, { tx: sh.tx + (n - 1) / 2, ty: sh.ty + (n - 1) / 2, rot: 0, y, k: n / 2 });
+        shelters.push({ name: `shelter-${sh.family}`, tx: sh.tx + (n - 1) / 2, ty: sh.ty + (n - 1) / 2, y, k: (SHELTER_MODEL_SCALE[sh.family] ?? 0.55) * (n / 3) });
       }
+    }
+    if (shelters.length) {
+      this.shelterP ??= this.model('shelters').then((m) => prepareDecor(m.scene));
+      this.shelterP.then((nodes) => {
+        if (this.decorGroup !== group) return; // rebuilt meanwhile
+        for (const it of shelters) {
+          const node = nodes.get(it.name);
+          if (!node) continue;
+          const obj = node.clone(true);
+          obj.position.set(it.tx * T, it.y(0), it.ty * T);
+          obj.scale.setScalar(T * it.k);
+          group.add(obj);
+        }
+      }).catch((err) => console.error(err));
     }
     if (!byNode.size) return;
     this.decorNodes().then((nodes) => {

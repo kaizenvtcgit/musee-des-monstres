@@ -1,29 +1,41 @@
 // A monster going into its shelter for real: it walks around the rock if needed, stops in front of
-// the cave, walks straight in (back to the viewer), rests at the mouth or deep inside, and later walks
-// out (facing the viewer). Positions in tile units; the mouth faces +y (down-left on screen).
+// the cave, walks straight in (back to the camera), rests at the mouth or deep inside, and later walks
+// out (facing the camera). Positions in tile units; the mouth faces +y.
+//
+// The shelters are the Blender models of models/blender/musee-decors.blend (scene MuseeShelters), made for
+// 3 x 3 tiles of 1 Blender unit; in the 3D view (src/render3d/park-scene.js) each one is scaled to its
+// monster (SHELTER_MODEL_SCALE: the cave keeps the size it had next to that monster), so every distance
+// below, measured on the models, is scaled the same way.
 
-// Where the monster rests "at the entrance", from the shelter's first tile (for a 2 x 2 one; scaled).
-export const SHELTER_ENTRANCE = 1.15;
-// Where the rock face (the mouth's outline) stands, from the centre, for a 3 x 3 shelter (scaled).
+// Scale of each shelter model in the 3D view: (height of its monster in the 3D view, in tiles) / (its height
+// in the models, in Blender units): the dragon 2.2 m / 1.8, the kraken 2.4 / 1.5, the golem 3.4 / 2.6,
+// the yeti 3.0 / 2.2, the ghost 2.5 / 1.5, with 2.5 m per tile.
+export const SHELTER_MODEL_SCALE = { lava: 0.49, water: 0.64, forest: 0.52, ice: 0.55, dark: 0.67 };
+const modelScale = (sh, n) => (SHELTER_MODEL_SCALE[sh?.family] ?? 0.55) * (n / 3);
+
+// Where the rock face (the mouth's outline) stands, from the centre (model units).
 export const SHELTER_FACE = 1.25;
-// the big caves of the yeti (ice) and of the golem (forest) stand further out than their 3 x 3 tiles
+// the big caves of the yeti (ice) and of the golem (forest) stand further out
 export const SHELTER_FACE_BY_FAMILY = { ice: 1.65, forest: 1.7 };
-// how far the rock reaches past its tiles (monsters walk around it)
-export const shelterOverhang = (family) => ((SHELTER_FACE_BY_FAMILY[family] ?? SHELTER_FACE) - SHELTER_FACE);
+const faceOf = (sh) => SHELTER_FACE_BY_FAMILY[sh?.family] ?? SHELTER_FACE;
+
+// Room the shelter takes for the monsters walking around (tile units, from its centre).
+export const shelterRadius = (sh, n) => (faceOf(sh) - 0.05) * modelScale(sh, n);
 
 export function shelterSpots(sh, n) {
   const half = (n - 1) / 2;
   const cx = sh.tx + half, cy = sh.ty + half;
-  const face = (SHELTER_FACE_BY_FAMILY[sh.family] ?? SHELTER_FACE) * (n / 3);
-  const mouthY = cy + Math.max((SHELTER_ENTRANCE - 0.5) * (n / 2), face - 0.35);
-  const o = shelterOverhang(sh.family) * (n / 3);
+  const k = modelScale(sh, n);
+  const face = faceOf(sh) * k;
+  const mouthY = cy + Math.max(0.975, faceOf(sh) - 0.35) * k;
+  const r = (faceOf(sh) + 0.25) * k; // half the size of the rock
   return {
     cx, cy, n,
-    rect: { x0: sh.tx - 0.5 - o, x1: sh.tx + n - 0.5 + o, y0: sh.ty - 0.5 - o, y1: sh.ty + n - 0.5 + o },
+    rect: { x0: cx - r, x1: cx + r, y0: cy - r, y1: cy + r },
     faceY: cy + face, // the rock face around the mouth
     mouth: { x: cx, y: mouthY }, // resting at the entrance, still in the light
-    front: { x: cx, y: Math.max(mouthY + 0.8, cy + face + 0.5) }, // just outside, facing the cave
-    deep: { x: cx, y: mouthY - 0.3 * n }, // inside, in the dark, still seen through the opening (its eyes)
+    front: { x: cx, y: Math.max(mouthY + 0.8 * k, cy + face + 0.5) }, // just outside, facing the cave
+    deep: { x: cx, y: mouthY - 0.9 * k }, // inside, in the dark
   };
 }
 
@@ -84,8 +96,3 @@ export function stepShelterVisit(v, s, want, speed, dt) {
   const dark = tunnel ? Math.max(0, Math.min(1, (s.mouth.y - v.y) / (s.mouth.y - s.deep.y))) : 0;
   return { atRest: v.stage === 'rest', dark, tunnel: !!v.stage && tunnel };
 }
-
-// A monster partly in the cave is drawn behind the rock front (the arch then hides what is inside,
-// the rest of it shows in the opening and on the ground in front); fully out, it is drawn normally.
-// radius: about half the monster's length.
-export const partlyInCave = (visit, s, y, radius) => visit.tunnel && y < s.faceY + radius;
