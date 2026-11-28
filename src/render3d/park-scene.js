@@ -15,6 +15,7 @@ import { HABITAT_FAMILY } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { drawBubble } from '../render/bubbles.js';
+import { Parking3D } from './parking3d.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
@@ -110,6 +111,7 @@ export class ParkScene {
     this.buildWalls();
     this.buildBuildings();
     this.buildDecor();
+    this.parking3d = new Parking3D(this, T); // the road, and the car park with its cars
     this.buildTrees();
     this.lastGrid = this.world.grid.version;
   }
@@ -802,8 +804,9 @@ vec2 flowUv(vec2 uv) {
         if (out < 2) continue;
         if (rnd() > 0.32 + out * 0.11) continue;
         const x = (tx + rnd() * 0.9) * T, z = (ty + rnd() * 0.9) * T;
-        // a clearing in front of the entrance gate, where the visitors come from
+        // a clearing in front of the entrance gate, where the visitors come from; none on the road and the car park
         if (Math.hypot(x / T - this.world.entrance.tx, z / T - this.world.entrance.ty) < 8) continue;
+        if (this.parking3d?.blocks(x / T, z / T)) continue;
         trees.push({ x, z, fir: rnd() < 0.35, h: 5 + rnd() * 4 + out * 0.3, rot: rnd() * 6.28 });
       }
     }
@@ -814,8 +817,11 @@ vec2 flowUv(vec2 uv) {
       const k = `${Math.floor(t.x / CELL)},${Math.floor(t.z / CELL)}`;
       (areas.get(k) ?? areas.set(k, []).get(k)).push(t);
     }
+    const token = (this.treeToken = (this.treeToken ?? 0) + 1);
     this.props().then((props) => {
-      const group = new THREE.Group();
+      if (token !== this.treeToken) return; // rebuilt meanwhile
+      if (this.forestGroup) this.s3.remove(this.forestGroup);
+      const group = (this.forestGroup = new THREE.Group());
       const low = props.get('pineTreeLow');
       this.forest = [];
       for (const list of areas.values()) {
@@ -1214,6 +1220,7 @@ vec2 flowUv(vec2 uv) {
     }
     this.syncMonsters(dt);
     this.syncPeople(dt);
+    this.parking3d.update(dt);
     this.updateEggs(time);
     // living grounds: water ripples and flowing lava (flowing), glowing lava breathing
     if (this.flowTime) this.flowTime.value = time - (this.flowT0 ??= time); // from the start: small numbers for the shader

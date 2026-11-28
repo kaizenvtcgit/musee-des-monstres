@@ -202,6 +202,18 @@ export function generateTextures(scene) {
     g.fillTriangle(32, 0, 37, 14, 27, 14);
     g.fillTriangle(32, 18, 37, 4, 27, 4);
   });
+  // the car park: a blue sign with a white P
+  tex(scene, 'parking', 64, 64, (g) => {
+    g.fillStyle(0x1f5fbf);
+    g.fillRoundedRect(6, 6, 52, 52, 8);
+    g.lineStyle(3, 0xffffff);
+    g.strokeRoundedRect(8, 8, 48, 48, 7);
+    g.fillStyle(0xffffff);
+    g.fillRect(22, 16, 7, 34);
+    g.fillRect(22, 16, 16, 6);
+    g.fillRect(22, 30, 16, 6);
+    g.fillRect(34, 16, 7, 20);
+  });
   tex(scene, 'expeditionBase', 128, 112, (g) => {
     shape(g, 0xbc6c25, (m) => g[`${m}Triangle`](64, 20, 18, 92, 110, 92));
     shape(g, 0x6f1d1b, (m) => g[`${m}Triangle`](64, 50, 50, 92, 78, 92));

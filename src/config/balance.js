@@ -10,6 +10,8 @@ export const BALANCE = {
   keeperSalaryPerMin: 20,
   feedCost: 20,
   demolishRefund: 0.5,
+  parkingCost: 1500, // the car park in front of the entrance (src/sim/parking.js)
+  parkingVisitorBonus: 1.3, // visitors come that much more often with it
   ticketPriceDefault: 20,
   ticketPriceRef: 20,
   visitorBaseIntervalSec: 8,

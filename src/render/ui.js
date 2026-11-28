@@ -16,6 +16,7 @@ const TOOLS = [
   { type: 'decoration', label: 'tool.decoration', icon: 'decoration', price: () => t('tool.price', { n: BALANCE.decorationCost }) },
   { type: 'snack', label: 'tool.snack', icon: 'snack', price: () => t('tool.price', { n: BALANCE.snackCost }) },
   { type: 'souvenir', label: 'tool.souvenir', icon: 'souvenir', price: () => t('tool.price', { n: BALANCE.souvenirCost }) },
+  { type: 'parking', label: 'tool.parking', icon: 'parking', price: () => t('tool.price', { n: BALANCE.parkingCost }) },
   { type: 'keeper', label: 'tool.keeper', icon: 'keeper', price: () => t('tool.price', { n: BALANCE.keeperHireCost }), action: true },
   { type: 'demolish', label: 'tool.demolish', icon: null },
 ];
@@ -143,6 +144,7 @@ class UI {
     let hint = null;
     if (tool.type === 'placeMonster') hint = t('hatchery.pickEnclosure', { habitat: this.habitatNames(tool.habitat).toLowerCase() });
     if (tool.type === 'shelter') hint = t('shelter.hint', { name: t(`shelter.${SHELTERS[tool.family]}`), habitat: this.habitatNames(tool.family).toLowerCase() });
+    if (tool.type === 'parking') hint = t('parking.hint');
     if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
     this.hint(hint);
   }
@@ -369,6 +371,16 @@ class UI {
         <div class="row">${esc(t('visitor.satisfaction', { n: Math.round(v.satisfaction * 100) }))}${bar(v.satisfaction * 100)}</div>`;
     }
 
+    if (sel.kind === 'parking') {
+      const p = w.parking;
+      if (!p) return null;
+      const used = p.cars.filter((c) => c.state !== 'leaving').length;
+      return `${close}<h3><img class="portrait" src="${this.img('parking')}">${esc(t('parking.title'))}</h3>
+        <div class="row">${esc(t('parking.places', { n: used, max: 12 }))}${bar((used / 12) * 100)}</div>
+        <div class="row">${esc(t('parking.bonus', { n: Math.round((BALANCE.parkingVisitorBonus - 1) * 100) }))}</div>
+        <div class="row"><button data-action="demolishParking">${esc(t('parking.demolish', { n: Math.round(p.price * BALANCE.demolishRefund) }))}</button></div>`;
+    }
+
     if (sel.kind === 'keeper') {
       const k = w.keepers.find((x) => x.id === sel.id);
       if (!k) return null;
@@ -439,6 +451,10 @@ class UI {
     const { action, id } = btn.dataset;
     const w = this.world;
     if (action === 'close') this.selection = null;
+    if (action === 'demolishParking') {
+      w.demolishParking();
+      this.selection = null;
+    }
     if (action === 'feed') {
       const r = w.feedMonster(id);
       if (!r.ok) this.error(r.reason);

@@ -17,6 +17,10 @@ import { ENCLOSURE_DECOR } from '../config/decor.js';
 import { HABITAT_FAMILY, habitatFits } from '../config/species.js';
 import { rectsOf, containsTile } from '../sim/enclosure.js';
 import { capacity } from '../sim/breeding.js';
+import { canPlaceParking, parkingTiles, parkingRow, isOnParking, PARKING_W } from '../sim/parking.js';
+
+// The car park tool: the car park is centred on the pointed column (it always sits against the park).
+const parkingX = (tile) => Math.round(tile.tx - (PARKING_W - 1) / 2);
 
 // Room the decorations take for the monsters walking around them (tile units); the shelter's room and the
 // walk into its cave: src/render/shelterpath.js.
@@ -424,7 +428,14 @@ export class GameScene extends Phaser.Scene {
         this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty));
         break;
       case 'demolish':
-        this.report(b.demolish(tile.tx, tile.ty));
+        if (isOnParking(world.parking, tile.tx, tile.ty)) this.report(world.demolishParking());
+        else this.report(b.demolish(tile.tx, tile.ty));
+        break;
+      case 'parking':
+        if (this.report(world.placeParking(parkingX(tile))).ok) {
+          this.ui.setTool({ type: 'select' });
+          this.ui.select({ kind: 'parking' });
+        }
         break;
       case 'placeMonster': {
         const t = world.grid.getTile(tile.tx, tile.ty);
@@ -474,6 +485,11 @@ export class GameScene extends Phaser.Scene {
         return;
       }
     }
+    // the car park (outside the park, in front of the entrance)
+    if (isOnParking(world.parking, tile.tx, tile.ty)) {
+      this.ui.select({ kind: 'parking' });
+      return;
+    }
     const t = world.grid.getTile(tile.tx, tile.ty);
     if (!t || !t.occupant) {
       this.ui.select(null);
@@ -500,6 +516,15 @@ export class GameScene extends Phaser.Scene {
     const type = this.tool.type;
     if (type === 'select') return cells;
     const diamondAt = (tx, ty, ok) => cells.push({ tx, ty, ok });
+    if (type === 'parking') {
+      const x0 = parkingX(tile), ok = canPlaceParking(this.world, x0).ok;
+      for (const c of parkingTiles(x0, parkingRow(grid))) diamondAt(c.tx, c.ty, ok);
+      return cells;
+    }
+    if (type === 'demolish' && isOnParking(this.world.parking, tile.tx, tile.ty)) {
+      for (const c of parkingTiles(this.world.parking.x0, this.world.parking.y0)) diamondAt(c.tx, c.ty, false);
+      return cells;
+    }
     if (type === 'enclosure' && this.dragStart) {
       const x0 = Math.min(this.dragStart.tx, tile.tx), x1 = Math.max(this.dragStart.tx, tile.tx);
       const y0 = Math.min(this.dragStart.ty, tile.ty), y1 = Math.max(this.dragStart.ty, tile.ty);

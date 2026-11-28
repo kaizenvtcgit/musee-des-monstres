@@ -10,6 +10,7 @@ import { ExpeditionBase, Hatchery, placeMonsterInEnclosure, createEgg } from './
 import { canBreed, breedingParents, rollBabyRare } from './breeding.js';
 import { computeReputation } from './reputation.js';
 import { checkObjectives, speciesOwned } from './objectives.js';
+import { sendCar, updateParking, placeParking, demolishParking } from './parking.js';
 
 const MAX_VISITORS = 150;
 const MIN_SPAWN_INTERVAL = 0.5;
@@ -28,6 +29,7 @@ export class World {
     this.expeditionBase = new ExpeditionBase();
     this.hatchery = new Hatchery();
     this.entrance = { tx: 20, ty: 39 };
+    this.parking = null; // the car park in front of the entrance (src/sim/parking.js)
     this.ticketPrice = BALANCE.ticketPriceDefault;
     this.speed = 1;
     this.time = 0;
@@ -62,6 +64,16 @@ export class World {
       rng: this.rng,
       storeMonster: (m, opts) => this.hatchery.storeMonster(m, opts),
     };
+    Object.defineProperty(this.ctx, 'parking', { get: () => this.parking });
+  }
+
+  // The car park (src/sim/parking.js): placed at column x0, in front of the entrance; pulled down.
+  placeParking(x0) {
+    return placeParking(this, x0);
+  }
+
+  demolishParking() {
+    return demolishParking(this);
   }
 
   setSpeed(s) {
@@ -199,6 +211,19 @@ export class World {
     }
     for (const k of this.keepers) updateKeeper(k, this.ctx, dt);
 
+    // the cars of the car park: one that has just parked lets its visitors out (each pays at the gate)
+    updateParking(this, dt, (car, door) => {
+      for (let k = 0; k < car.seats; k++) {
+        const v = createVisitor(this.entrance, Math.floor(this.rng() * 4));
+        v.pos = { x: door.x + (k - 1) * 0.3, y: door.y };
+        v.state = 'arriving';
+        v.carId = car.id;
+        car.passengers.push(v.id);
+        this.visitors.push(v);
+        this.totalVisitors++;
+        this.wallet.earn(this.ticketPrice);
+      }
+    });
     for (const v of this.visitors) updateVisitor(v, this.ctx, dt);
     for (let i = this.visitors.length - 1; i >= 0; i--) {
       const v = this.visitors[i];
@@ -209,15 +234,23 @@ export class World {
     }
 
     this.spawnTimer += dt;
-    const interval = Math.max(MIN_SPAWN_INTERVAL, spawnIntervalSec(this.reputation, this.ticketPrice));
+    // a car park brings more visitors (by car, 1 to 3 at a time)
+    const bonus = this.parking ? BALANCE.parkingVisitorBonus : 1;
+    const interval = Math.max(MIN_SPAWN_INTERVAL, spawnIntervalSec(this.reputation, this.ticketPrice)) / bonus;
     // nobody comes in (nor pays a ticket) while there is no monster to see from the paths:
     // the timer waits, so the next visitor arrives as soon as one is on show again
     if (this.spawnTimer >= interval && !this.#hasSomethingToSee()) this.spawnTimer = interval;
     else if (this.spawnTimer >= interval && this.visitors.length < MAX_VISITORS) {
-      this.spawnTimer = 0;
-      this.visitors.push(createVisitor(this.entrance, Math.floor(this.rng() * 4)));
-      this.totalVisitors++;
-      this.wallet.earn(this.ticketPrice);
+      const n = this.parking ? 1 + Math.floor(this.rng() * 3) : 1;
+      if (this.parking && sendCar(this, n)) {
+        this.spawnTimer = -(n - 1) * interval; // the next one later: n visitors came at once
+      } else {
+        // on foot (no car park, or it is full)
+        this.spawnTimer = 0;
+        this.visitors.push(createVisitor(this.entrance, Math.floor(this.rng() * 4)));
+        this.totalVisitors++;
+        this.wallet.earn(this.ticketPrice);
+      }
     }
 
     const egg = this.expeditionBase.update(dt, this.rng);

@@ -29,6 +29,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `node scripts/render-model/render-decor.mjs` | Refait les décorations d'enclos et les abris : le fichier 3D `src/assets/3d/decor.glb.json` et leurs icônes des menus (modèles Poly Haven téléchargés automatiquement, ou fabriqués dans `scripts/render-model/decor.html`). Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
 | `node scripts/render-model/render-ground.mjs` | Refait les icônes des sols (allée, habitats) à partir de textures photo, téléchargées automatiquement |
 | `node scripts/3d/glb-to-json.mjs fichier.glb` | Emballe un modèle `.glb` dans un `.glb.json` (voir « Modèles 3D ») |
+| `node scripts/3d/cars-to-glb.cjs` | Refait les voitures du parking (`src/assets/3d/cars.glb.json`) à partir de `models/cars/*.fbx` (détails en tête du script) |
 
 ## Comment jouer
 
@@ -60,6 +61,10 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   Le monstre s'y réfugie de temps en temps (plus souvent s'il est stressé) : il se repose à l'entrée, ou s'y cache.
   Il y est plus heureux, mais caché il n'attire plus les visiteurs.
 - **Snack**, **Souvenirs** (la Fabrique à Monstres) : les visiteurs y dépensent leur argent.
+- **Parking** (1 500 pièces, un seul) : à poser sur l'herbe devant l'entrée, entre le parc et la route (pas devant le
+  portail). Les visiteurs viennent 30 % plus souvent, en voiture : elle arrive par la route, se gare, ses passagers
+  (1 à 3) marchent jusqu'à l'entrée, et quand ils sont tous revenus elle sort en marche arrière et repart. Plein
+  (12 places), les visiteurs arrivent à pied comme avant. Clic dessus : sa fiche (places occupées, démolition).
 - **Gardien** : rattrape les monstres évadés (un « ! » au-dessus de sa tête pendant la poursuite).
 - **Démolir** : retire une allée, un enclos, un bâtiment ou une décoration.
 
@@ -79,6 +84,7 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
 
 - `src/sim/` : toutes les règles du jeu (sans affichage), testées dans `tests/sim/`.
 - `src/sim/save.js` : transforme une partie en données (et l'inverse) ; `src/save/storage.js` : l'enregistre dans le navigateur.
+- `src/sim/parking.js` : le parking, ses voitures et leurs trajets (testés dans `tests/sim/parking.test.js`).
 - `src/render3d/` : ce qu'on voit, en 3D (three.js).
   - `park-scene.js` : le parc (sol, allées, murs, bâtiments, forêt), reconstruit quand il change ; les monstres et
     les personnes ; le choix de ce qui est sous le pointeur ; les bulles ; les portraits des fiches.
@@ -86,6 +92,7 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   - `park3d.js` : la vue du dessus (caméra, outils), la bascule vers la marche à pied, la qualité adaptée à
     l'appareil, les sons entendus depuis la caméra.
   - `visit.js` : la marche à pied.
+  - `parking3d.js` : la route, le parking et ses voitures (roues qui tournent, peintures variées).
 - `src/render/GameScene.js` : une scène Phaser **cachée** qui fait tourner le jeu (rien n'y est dessiné) : elle
   avance la simulation, décide ce que fait chaque monstre (flâner, se reposer, une action, une sieste…) et joue son
   animation (sur une texture vide) ; la vue 3D joue le clip du même nom, au même moment. Elle porte aussi les outils
@@ -131,6 +138,8 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   (licence CC0), allégés avec gltf-transform.
 - Sols : textures photo de [ambientCG](https://ambientcg.com) (licence CC0) — pelouse Grass004, allées PavingStones070, enclos Lava003, Tiles093, Ground068, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A.
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
+- Voitures du parking : « [Cars Pack](https://quaternius.com/packs/cars.html) » de Quaternius (licence CC0),
+  originaux dans `models/cars/`.
 - Bibliothèques : [three.js](https://threejs.org) (3D) et [Phaser](https://phaser.io) (boucle de jeu), licence MIT.
 - `docs/` : document de conception et plan de construction.
 
