@@ -126,7 +126,11 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
 - `expedition-interior.glb.json` : l'aménagement de la tente d'expédition (plancher, table, lits de camp,
   caisses, œuf dans la paille, lampe), fait dans Blender (scène `TentInterior`) dans le repère du modèle de la tente,
   placé avec elle (`placeModel`, paramètre `inside`).
-- `src/assets/3d/tex/` : textures de sol et de mur (ambientCG, CC0) en 512 px.
+- `src/assets/3d/tex/` : textures de sol (ambientCG, CC0) en 1024 px, une par habitat : couleur (`nom.webp`), relief
+  (`nom-n.webp`) et `nom-r.webp` (R = occlusion, G = rugosité) ; les murs en 512 px. Sur téléphone ou petit processeur,
+  le jeu les réduit à 512 px au chargement. `src/render3d/grounds.js` casse la répétition (la texture mêlée à une copie
+  tournée et agrandie selon un bruit, teinte qui varie doucement), fond les bords des allées dans la pelouse, ombre le
+  pied des murs et sème de petits détails selon l'habitat (touffes d'herbe, cailloux, braises, plaques de neige).
 - Les personnes ne sont pas dans `models/` (trop lourdes) : les originaux sont les dossiers glTF « Individual
   Characters » des packs [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html)
   et [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html).

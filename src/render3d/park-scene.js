@@ -16,6 +16,7 @@ import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { drawBubble } from '../render/bubbles.js';
 import { Parking3D } from './parking3d.js';
+import { antiTile, pathFringe, wallShade, groundDetails } from './grounds.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
@@ -48,22 +49,22 @@ const REVERSED = { golem: ['walk'] };
 const VISITOR_MODELS = ['person-men-casual_2', 'person-women-casual', 'person-men-suit', 'person-women-formal'];
 const KEEPER_MODEL = 'person-men-worker';
 
-// Ground textures: file, metres covered by one copy of the texture, tint.
+// Ground textures (src/assets/3d/tex, CC0 from ambientCG: name, name-n normals, name-r AO (R) + roughness (G)):
+// metres covered by one copy of the texture, tint.
 const GROUNDS = {
-  grass: { tex: 'grass', size: 4, tint: 0xdcf0cc },
-  path: { tex: 'path', size: 2.5, tint: 0xe2dcd0 },
-  lava: { tex: 'lava', size: 6, tint: 0xb0a8a4, emissive: 'lava-e' },
-  dark: { tex: 'dark', size: 4, tint: 0xb6aec4 },
-  forest: { tex: 'forest', size: 5, tint: 0xd0d8c4 },
-  ice: { tex: 'ice', size: 6, tint: 0xe4eefa },
-  // the habitats not offered yet borrow a texture of the visible ones
-  ash: { tex: 'dark', size: 5, tint: 0x8c8884 },
-  basalt: { tex: 'dark', size: 6, tint: 0x9a8070 },
-  graveyard: { tex: 'forest', size: 5, tint: 0x8e8a7a },
-  ruins: { tex: 'path', size: 3, tint: 0xc8c4b4 },
-  crystal: { tex: 'dark', size: 5, tint: 0x9088a8 },
-  tundra: { tex: 'ice', size: 5, tint: 0xffffff },
-  summit: { tex: 'ice', size: 6, tint: 0xd9e2ee },
+  grass: { size: 4, tint: 0xe8f2dc, minRough: 0.85 },
+  path: { size: 2.5, tint: 0xf0ebe2 },
+  lava: { size: 6, tint: 0xb0a8a4, emissive: 'lava-e' },
+  dark: { size: 3, tint: 0xc4bccc },
+  forest: { size: 4, tint: 0xffffff },
+  ice: { size: 5, tint: 0xf4f8ff },
+  ash: { size: 4, tint: 0xb8b2ac },
+  basalt: { size: 4, tint: 0xd8ccc4 },
+  graveyard: { size: 4, tint: 0xd8d6cc },
+  ruins: { size: 3, tint: 0xf0ece0 },
+  crystal: { size: 4, tint: 0xd8d0f0 },
+  tundra: { size: 5, tint: 0xffffff },
+  summit: { size: 5, tint: 0xeef2f8 },
 };
 // water habitats: colour of the water
 const WATERS = { water: 0x1f6474, reef: 0x1f7a7c, abyss: 0x0a1a2c, swamp: 0x3a4226 };
@@ -88,6 +89,7 @@ export class ParkScene {
     this.monsters = new Map();
     this.models = new Map(); // file -> Promise<{ scene, animations, box }>
     this.texCache = new Map();
+    this.lowTex = matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency ?? 8) <= 4;
     this.focus = new THREE.Vector3(); // where the camera looks: shadows and people around it
     this.viewPeople = 70; // m: people further from the focus are not drawn
     this.shadowSize = 38; // m: half the side of the square that gets sun shadows
@@ -152,7 +154,20 @@ export class ParkScene {
   // `key`: another copy of the same picture (its own repeat), cached under that key
   tex(name, repeatColor = true, key = name) {
     if (this.texCache.has(key)) return this.texCache.get(key);
-    const tx = new THREE.TextureLoader().load(asset(`tex/${name}.webp`));
+    const url = asset(`tex/${name}.webp`);
+    let tx;
+    if (this.lowTex) {
+      // modest computers and phones: the pictures halved (512 px), lighter on memory
+      tx = new THREE.Texture(); // (nothing drawn until the picture is there: its size is known only then)
+      new THREE.ImageLoader().load(url, (img) => {
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, img.width >> 1);
+        c.height = Math.max(1, img.height >> 1);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        tx.image = c;
+        tx.needsUpdate = true;
+      });
+    } else tx = new THREE.TextureLoader().load(url);
     tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
     tx.anisotropy = 8;
     if (repeatColor) tx.colorSpace = THREE.SRGBColorSpace;
@@ -218,8 +233,10 @@ export class ParkScene {
 
   groundMaterial(name) {
     const d = GROUNDS[name];
+    const r = this.tex(`${name}-r`, false);
     const m = new THREE.MeshStandardMaterial({
-      map: this.tex(d.tex), normalMap: this.tex(`${d.tex}-n`, false), color: d.tint, roughness: 0.95,
+      map: this.tex(name), normalMap: this.tex(`${name}-n`, false), roughnessMap: r, aoMap: r, aoMapIntensity: 0.9,
+      color: d.tint, roughness: 1,
     });
     if (d.emissive) {
       m.emissiveMap = this.tex(d.emissive);
@@ -227,7 +244,7 @@ export class ParkScene {
       m.emissiveIntensity = 3;
       this.lavaMats = [...(this.lavaMats ?? []), m];
       this.flowing(m, 'lava');
-    }
+    } else antiTile(m, d.minRough ?? 0.45);
     return m;
   }
 
@@ -298,7 +315,10 @@ vec2 flowUv(vec2 uv) {
     const old = this.groundGroup;
     if (old) {
       this.s3.remove(old);
-      old.traverse((o) => o.geometry?.dispose());
+      old.traverse((o) => {
+        o.geometry?.dispose();
+        if (o.userData.ownMaterial) { o.userData.ownMap?.dispose(); o.material.dispose(); }
+      });
     }
     const group = (this.groundGroup = new THREE.Group());
     this.s3.add(group);
@@ -385,6 +405,14 @@ vec2 flowUv(vec2 uv) {
       mesh.receiveShadow = true;
       group.add(mesh);
     }
+    // softer edges: the paths fade into the lawn, a shade at the foot of the walls; small things on the grounds
+    if (this.mats.has('path')) {
+      const fringe = pathFringe(this.world, T, this.mats.get('path'), GROUNDS.path.size);
+      if (fringe) group.add(fringe);
+    }
+    const shade = wallShade(this.world, T, (e) => WATERS[e.habitat] !== undefined);
+    if (shade) group.add(shade);
+    group.add(groundDetails(this.world, T));
   }
 
   // ---------------------------------------------------------------- walls
