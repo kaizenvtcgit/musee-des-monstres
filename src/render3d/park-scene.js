@@ -17,6 +17,7 @@ import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { standOf } from '../config/stands.js';
 import { faceToPath, quarterAngle } from '../sim/facing.js';
 import { drawBubble } from '../render/bubbles.js';
+import { bridgeHeightAt } from '../sim/bridge.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
@@ -110,6 +111,7 @@ export class ParkScene {
     this.buildLights();
     this.buildGround();
     this.buildWalls();
+    this.buildBridges();
     this.buildBuildings();
     this.buildDecor();
     this.buildTrees();
@@ -406,7 +408,8 @@ vec2 flowUv(vec2 uv) {
           const ox = tx + dx, oy = ty + dy;
           if (containsTile(e, ox, oy)) continue;
           const out = grid.inBounds(ox, oy) && grid.getTile(ox, oy);
-          const glass = !!out && out.ground === 'path' && !out.occupant;
+          // stone where a bridge goes over the wall (its stairs end there)
+          const glass = !!out && out.ground === 'path' && !out.occupant && !grid.isBridge(tx, ty);
           const x = (tx + dx / 2) * T, z = (ty + dy / 2) * T, alongX = dy !== 0;
           segs.push({ x, z, alongX, glass });
           // the two ends of the segment: posts
@@ -491,6 +494,85 @@ vec2 flowUv(vec2 uv) {
       paneI.renderOrder = 2;
     }
     railI.count = ri;
+  }
+
+  // ---------------------------------------------------------------- bridges
+
+  // The bridges over the enclosures (src/sim/bridge.js): a plank deck high enough for the tallest monster,
+  // railings along its free sides, stone piers every other tile, a flight of steps down at each end.
+  buildBridges() {
+    const old = this.bridgeGroup;
+    if (old) {
+      this.s3.remove(old);
+      old.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+    }
+    const group = (this.bridgeGroup = new THREE.Group());
+    this.s3.add(group);
+    const { builder } = this.world;
+    if (!builder.bridges.size) return;
+    const D = BALANCE.bridgeDeckHeight, DECK = 0.25, RAIL_H = 1.05, POST = 0.12, STEPS = 12;
+    const planks = this.stripes('#8a5a36', '#7a4e2e');
+    planks.wrapS = planks.wrapT = THREE.RepeatWrapping;
+    planks.repeat.set(1.5, 1);
+    const wood = new THREE.MeshStandardMaterial({ map: planks, roughness: 0.85 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x5b3a22, roughness: 0.8 });
+    const stoneTex = this.tex('wall', true, 'wall-pier');
+    stoneTex.repeat.set(0.5, 1.6);
+    const stone = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0xe6dccb, roughness: 0.9 });
+    const box = (w, h, d, mat, x, y, z, rot = 0) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      m.rotation.y = rot;
+      m.castShadow = m.receiveShadow = true;
+      group.add(m);
+      return m;
+    };
+    const decorAt = (tx, ty) => [...builder.enclosures.values()].some((e) => (e.decor ?? []).some((d) => d.tx === tx && d.ty === ty));
+    for (const b of builder.bridges.values()) {
+      const onDeck = (tx, ty) => b.deck.some((c) => c.tx === tx && c.ty === ty);
+      const stairAt = (tx, ty) => b.stairs.some((s) => s.tx === tx && s.ty === ty);
+      for (const { tx, ty } of b.deck) {
+        const x = tx * T, z = ty * T;
+        box(T, DECK, T, wood, x, D - DECK / 2, z, (tx + ty) % 2 ? 0 : Math.PI / 2);
+        // a stone pier every other tile (not through a decoration)
+        if ((tx + ty) % 2 === 0 && !decorAt(tx, ty)) box(0.55, D - DECK, 0.55, stone, x, (D - DECK) / 2, z);
+        // railings on the sides with no deck or stairs beyond
+        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+          if (onDeck(tx + dx, ty + dy) || stairAt(tx + dx, ty + dy)) continue;
+          const ex = x + (dx * T) / 2 * 0.94, ez = z + (dy * T) / 2 * 0.94, rot = dy ? 0 : Math.PI / 2;
+          box(T, 0.08, 0.1, dark, ex, D + RAIL_H, ez, rot);
+          box(T, 0.06, 0.06, dark, ex, D + RAIL_H / 2, ez, rot);
+          for (const s of [-0.5, 0, 0.5]) {
+            const px = dy ? ex + s * T * 0.96 : ex, pz = dy ? ez : ez + s * T * 0.96;
+            box(POST, RAIL_H, POST, dark, px, D + RAIL_H / 2, pz);
+          }
+        }
+      }
+      // the steps, from the ground up to the deck, with a sloping handrail on each side
+      for (const s of b.stairs) {
+        const rot = s.dy ? 0 : Math.PI / 2;
+        for (let i = 0; i < STEPS; i++) {
+          const u = -0.5 + (i + 0.5) / STEPS, h = (D * (i + 1)) / STEPS;
+          const x = (s.tx + s.dx * u) * T, z = (s.ty + s.dy * u) * T;
+          box(T * 0.8, h, T / STEPS, i % 2 ? wood : dark, x, h / 2, z, rot);
+        }
+        const len = Math.hypot(T, D), slope = Math.atan2(D, T);
+        for (const side of [-1, 1]) {
+          const ox = s.dy ? side * T * 0.42 : 0, oz = s.dx ? side * T * 0.42 : 0;
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, len), dark);
+          rail.position.set(s.tx * T + ox, D / 2 + RAIL_H, s.ty * T + oz);
+          rail.rotation.order = 'YXZ';
+          rail.rotation.y = Math.atan2(s.dx, s.dy);
+          rail.rotation.x = -slope;
+          rail.castShadow = true;
+          group.add(rail);
+          for (const u of [-0.45, 0.45]) {
+            const h = D * (u + 0.5);
+            box(POST, RAIL_H, POST, dark, (s.tx + s.dx * u) * T + ox, h + RAIL_H / 2, (s.ty + s.dy * u) * T + oz);
+          }
+        }
+      }
+    }
   }
 
   // ---------------------------------------------------------------- buildings and scenery
@@ -1101,11 +1183,11 @@ vec2 flowUv(vec2 uv) {
     for (const v of this.world.visitors) {
       if (v.state === 'gone' || !v.pos || !near(v.pos.x, v.pos.y)) continue;
       const k = [...v.id].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
-      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, model: this.modelOf({ kind: 'visitor', id: v.id }), walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
+      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, y3: bridgeHeightAt(this.world.builder.bridges.values(), v.pos.x, v.pos.y), model: this.modelOf({ kind: 'visitor', id: v.id }), walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
     }
     for (const kp of this.world.keepers) {
       if (!kp.pos || !near(kp.pos.x, kp.pos.y)) continue;
-      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8, ...this.follow(kp.id), icon: kp.state === 'chasing' ? 'bubble-alert' : null });
+      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, y3: bridgeHeightAt(this.world.builder.bridges.values(), kp.pos.x, kp.pos.y), model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8, ...this.follow(kp.id), icon: kp.state === 'chasing' ? 'bubble-alert' : null });
     }
     this.sync(this.people, items, (it) => this.spawn(it.model, it.h), dt);
   }
@@ -1224,6 +1306,7 @@ vec2 flowUv(vec2 uv) {
       this.lastGrid = this.world.grid.version;
       this.buildGround();
       this.buildWalls();
+      this.buildBridges();
       this.buildBuildings();
       this.buildDecor();
     }
