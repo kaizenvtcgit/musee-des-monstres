@@ -131,6 +131,8 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   le jeu les réduit à 512 px au chargement. `src/render3d/grounds.js` casse la répétition (la texture mêlée à une copie
   tournée et agrandie selon un bruit, teinte qui varie doucement), fond les bords des allées dans la pelouse, ombre le
   pied des murs et sème de petits détails selon l'habitat (touffes d'herbe, cailloux, braises, plaques de neige).
+  L'enclos de lave est de la roche volcanique sombre (texture du basalte) où la lave ne coule que dans des rigoles
+  sinueuses et quelques mares (`lavaChannels` : un bruit déformé dessine les chemins, la lave y coule et rougeoie).
 - Les personnes ne sont pas dans `models/` (trop lourdes) : les originaux sont les dossiers glTF « Individual
   Characters » des packs [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html)
   et [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html).

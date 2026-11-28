@@ -16,7 +16,7 @@ import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { drawBubble } from '../render/bubbles.js';
 import { Parking3D } from './parking3d.js';
-import { antiTile, pathFringe, wallShade, groundDetails } from './grounds.js';
+import { antiTile, lavaChannels, pathFringe, wallShade, groundDetails } from './grounds.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
@@ -54,7 +54,7 @@ const KEEPER_MODEL = 'person-men-worker';
 const GROUNDS = {
   grass: { size: 4, tint: 0xe8f2dc, minRough: 0.85 },
   path: { size: 2.5, tint: 0xf0ebe2 },
-  lava: { size: 6, tint: 0xb0a8a4, emissive: 'lava-e' },
+  lava: { size: 4, tint: 0xffffff, emissive: 'lava-e', rock: 'basalt' }, // lava in channels on volcanic rock
   dark: { size: 3, tint: 0xc4bccc },
   forest: { size: 4, tint: 0xffffff },
   ice: { size: 5, tint: 0xf4f8ff },
@@ -242,51 +242,31 @@ export class ParkScene {
       m.emissiveMap = this.tex(d.emissive);
       m.emissive = new THREE.Color(0xff5a10);
       m.emissiveIntensity = 3;
+      m.aoMap = null;
       this.lavaMats = [...(this.lavaMats ?? []), m];
-      this.flowing(m, 'lava');
+      this.flowTime ??= { value: 0 };
+      lavaChannels(m, this.flowTime, this.tex(d.rock, true, `${d.rock}-lava`), this.tex(`${d.rock}-n`, false, `${d.rock}-n-lava`));
     } else antiTile(m, d.minRough ?? 0.45);
     return m;
   }
 
-  // A living ground, moved in its shader by the shared clock this.flowTime (see update):
-  // - 'lava': the molten crust slowly flows and churns (its colour, glow and relief move together);
-  // - 'water': two sets of ripples crossing each other at different speeds.
-  flowing(m, kind) {
+  // Moving water, in its shader, on the shared clock this.flowTime (see update): two sets of ripples crossing each
+  // other at different speeds. (The lava flows in its channels: lavaChannels, src/render3d/grounds.js.)
+  flowing(m) {
     this.flowTime ??= { value: 0 };
     const time = this.flowTime;
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uFlowTime = time;
-      const fn = kind === 'lava'
-        ? `uniform float uFlowTime;
-vec2 flowUv(vec2 uv) {
-  float t = uFlowTime;
-  return uv + vec2(t * 0.018, t * 0.011)
-    + 0.035 * vec2(sin(uv.y * 5.3 + t * 0.55), cos(uv.x * 4.7 + t * 0.47))
-    + 0.012 * vec2(sin(uv.y * 13.0 - t * 0.9), sin(uv.x * 11.0 + t * 0.8));
-}
-`
-        : `uniform float uFlowTime;
-`;
-      // the chunks are still "#include <...>" here: put their code in, to change it
-      sh.fragmentShader = fn + sh.fragmentShader;
-      for (const chunk of ['map_fragment', 'emissivemap_fragment', 'normal_fragment_maps']) {
-        sh.fragmentShader = sh.fragmentShader.replace(`#include <${chunk}>`, THREE.ShaderChunk[chunk]);
-      }
-      if (kind === 'lava') {
-        sh.fragmentShader = sh.fragmentShader
-          .replace('texture2D( map, vMapUv )', 'texture2D( map, flowUv( vMapUv ) )')
-          .replace('texture2D( emissiveMap, vEmissiveMapUv )', 'texture2D( emissiveMap, flowUv( vEmissiveMapUv ) )')
-          .replace('vec3 mapN = texture2D( normalMap, vNormalMapUv )', 'vec3 mapN = texture2D( normalMap, flowUv( vNormalMapUv ) )');
-      } else {
-        sh.fragmentShader = sh.fragmentShader.replace(
+      sh.fragmentShader = 'uniform float uFlowTime;\n' + sh.fragmentShader
+        .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps)
+        .replace(
           'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
           `vec3 mapN = normalize(
     ( texture2D( normalMap, vNormalMapUv + vec2( uFlowTime * 0.06, uFlowTime * 0.035 ) ).xyz * 2.0 - 1.0 )
     + ( texture2D( normalMap, vNormalMapUv * 2.6 + vec2( -uFlowTime * 0.09, uFlowTime * 0.12 ) ).xyz * 2.0 - 1.0 ) * 0.8 );`,
         );
-      }
     };
-    m.customProgramCacheKey = () => `flow-${kind}`;
+    m.customProgramCacheKey = () => 'flow-water';
   }
 
   // a tileable wavy normal map, drawn once
@@ -375,7 +355,7 @@ vec2 flowUv(vec2 uv) {
           color: WATERS[k], roughness: 0.06, metalness: 0, transmission: 0, normalMap: n, normalScale: new THREE.Vector2(1.1, 1.1),
           transparent: true, opacity: 0.88, envMapIntensity: 1.2,
         });
-        this.flowing(m, 'water');
+        this.flowing(m);
         this.waterMats.push(m);
         const surf = new THREE.Mesh(this.quads(tiles, -0.12, 6), m);
         surf.receiveShadow = true;

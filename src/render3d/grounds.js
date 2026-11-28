@@ -233,3 +233,71 @@ export function groundDetails(world, T) {
     (s) => { const k = 0.18 + s * 0.3; return [k * 1.4, 1, k]; }, 0.025, false);
   return group;
 }
+
+// ---------------------------------------------------------------- lava in channels
+
+// The lava ground: dark volcanic rock (`rock`, `rockN`), the molten lava only in winding channels and a few pools
+// (where a wide warped noise crosses its middle value), slowly flowing (`time`: the shared clock, in seconds),
+// with a glowing rim at the edge of the rock. The material's map / normalMap / emissiveMap are the lava's.
+export function lavaChannels(mat, time, rock, rockN) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uFlowTime = time;
+    sh.uniforms.uRockMap = { value: rock };
+    sh.uniforms.uRockN = { value: rockN };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundXZ = (modelMatrix * vec4(position, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec2 vGroundXZ;
+uniform float uFlowTime;
+uniform sampler2D uRockMap;
+uniform sampler2D uRockN;
+${NOISE}
+float lavaFbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += a * gNoise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+  return v;
+}
+vec2 flowUv(vec2 uv) {
+  float t = uFlowTime;
+  return uv + vec2(t * 0.018, t * 0.011)
+    + 0.035 * vec2(sin(uv.y * 5.3 + t * 0.55), cos(uv.x * 4.7 + t * 0.47))
+    + 0.012 * vec2(sin(uv.y * 13.0 - t * 0.9), sin(uv.x * 11.0 + t * 0.8));
+}
+// x: lava (1 in the channels), y: the thin glowing rim around them, z: the hot middle of the channels
+vec3 lavaMask(vec2 xz) {
+  vec2 p = xz * 0.09;
+  p += 1.1 * vec2(lavaFbm(p + 3.1), lavaFbm(p + 7.7));
+  float f = lavaFbm(p);
+  float d = min(abs(f - 0.5), abs(f - 0.36) * 2.2); // a main river and thinner branches
+  float pf = lavaFbm(xz * 0.05 + 11.0);
+  float m = max(1.0 - smoothstep(0.03, 0.04, d), smoothstep(0.67, 0.69, pf));
+  float rim = max(1.0 - smoothstep(0.04, 0.052, d), smoothstep(0.655, 0.67, pf)) - m;
+  float hot = max(1.0 - smoothstep(0.0, 0.03, d), smoothstep(0.69, 0.74, pf));
+  return vec3(m, max(rim, 0.0), hot);
+}
+vec3 lavaMk;`)
+      .replace('#include <map_fragment>', `
+  lavaMk = lavaMask(vGroundXZ);
+  vec4 lavaC = texture2D(map, flowUv(vMapUv));
+  vec2 rockUv = G_ROT * vMapUv * 1.4;
+  vec4 rockC = mix(texture2D(uRockMap, rockUv), texture2D(uRockMap, gUv(rockUv)), gMix(vGroundXZ));
+  rockC.rgb *= vec3(0.42, 0.38, 0.37) * gShade(vGroundXZ) * (1.0 - 0.5 * lavaMk.y); // scorched near the lava
+  diffuseColor *= mix(rockC, lavaC, lavaMk.x);`)
+      .replace('#include <roughnessmap_fragment>', `
+float roughnessFactor = mix(0.92, roughness * texture2D(roughnessMap, vRoughnessMapUv).g, lavaMk.x);`)
+      .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps)
+      .replace('vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;', `
+  vec3 lavaN = texture2D( normalMap, flowUv( vNormalMapUv ) ).xyz * 2.0 - 1.0;
+  vec3 rockNr = texture2D( uRockN, G_ROT * vNormalMapUv * 1.4 ).xyz * 2.0 - 1.0;
+  rockNr.xy = G_UNROT * rockNr.xy;
+  vec3 mapN = normalize( mix( rockNr, lavaN, lavaMk.x ) );`)
+      .replace('#include <emissivemap_fragment>', `
+  vec3 lavaE = texture2D( emissiveMap, flowUv( vEmissiveMapUv ) ).rgb;
+  totalEmissiveRadiance *= (lavaE + vec3(1.0, 0.32, 0.05) * 0.22 * lavaMk.z) * lavaMk.x + vec3(1.0, 0.3, 0.05) * lavaMk.y * 0.06;`);
+  };
+  mat.customProgramCacheKey = () => 'ground-lava-channels';
+  mat.needsUpdate = true;
+  return mat;
+}
