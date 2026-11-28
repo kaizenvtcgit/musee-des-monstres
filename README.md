@@ -133,7 +133,13 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   pied des murs et sème de petits détails selon l'habitat (touffes d'herbe, cailloux, braises, plaques de neige).
   L'enclos de lave est de la roche volcanique sombre (texture du basalte) où la lave ne coule que dans des rigoles
   sinueuses et quelques mares, creusées dans la roche bosselée (`lavaChannels` : un bruit déformé dessine les chemins,
-  la lave y coule et rougeoie ; `lavaGeometry` découpe le sol en petits carreaux que le shader soulève ou creuse).
+  la lave y coule et rougeoie).
+  Les autres enclos secs ont aussi leur relief et leur caractère (`src/render3d/terrain.js`, table `RELIEF`) : le sol
+  est découpé en carreaux de 25 cm (`reliefGeometry`) que le shader soulève ou creuse selon l'habitat, en s'effaçant
+  contre les murs, et un second aspect s'y mêle selon le même bruit : forêt bosselée et tapis de mousse, cimetière à
+  l'herbe sèche, sol sombre avec flaques luisantes, congères et plaques de glace lisse, toundra où la terre perce sous
+  la neige, sommet enneigé aux crêtes rocheuses, dunes de cendre, colonnes de basalte hexagonales, ruines envahies
+  d'herbe, roche du cristal parcourue de veines lumineuses. Les petits détails (touffes, cailloux) suivent le relief.
 - Les personnes ne sont pas dans `models/` (trop lourdes) : les originaux sont les dossiers glTF « Individual
   Characters » des packs [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html)
   et [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html).

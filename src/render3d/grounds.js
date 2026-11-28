@@ -7,20 +7,9 @@
 //   patches of snow), drawn with instancing.
 import * as THREE from 'three';
 import { tilesOf, containsTile } from '../sim/enclosure.js';
+import { NOISE, RELIEF, edgeFactor, onRelief } from './terrain.js';
+export { reliefGeometry } from './terrain.js';
 
-const NOISE = `
-float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float gNoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), u.x), mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), u.x), u.y);
-}
-// where the second copy of the texture shows (0..1), and the gentle colour shift (about 0.86..1.14)
-float gMix(vec2 xz) { return smoothstep(0.32, 0.68, gNoise(xz * 0.085)); }
-float gShade(vec2 xz) { return 0.86 + 0.28 * (gNoise(xz * 0.023) * 0.6 + gNoise(xz * 0.071) * 0.4); }
-const mat2 G_ROT = mat2(0.866, -0.5, 0.5, 0.866);
-const mat2 G_UNROT = mat2(0.866, 0.5, -0.5, 0.866);
-vec2 gUv(vec2 uv) { return G_ROT * uv * 0.61 + vec2(0.37, 0.71); }
-`;
 
 // `minRough`: the least roughness kept from the roughness map (a lawn seen from afar must not shine).
 export function antiTile(mat, minRough = 0) {
@@ -143,7 +132,7 @@ function tuftTexture() {
   for (let i = 0; i < 40; i++) {
     const x = 16 + rnd() * 96, h = 50 + rnd() * 70, lean = (rnd() - 0.5) * 40;
     const shade = 70 + rnd() * 70;
-    g.strokeStyle = `rgb(${shade * 0.55}, ${shade}, ${shade * 0.35})`;
+    g.strokeStyle = `rgb(${shade * 0.62}, ${shade * 0.86}, ${shade * 0.42})`;
     g.lineWidth = 2 + rnd() * 2.5;
     g.beginPath();
     g.moveTo(x, 128);
@@ -168,6 +157,9 @@ function tuftGeometry() {
   return g;
 }
 
+// the colour of the tufts of grass, by habitat (dry and yellowish in the graveyard)
+const TUFT_TINT = { forest: 0xe4f0cc, graveyard: 0xf4e4a8, tundra: 0xdce4c4, ruins: 0xe4f0c4 };
+
 // What grows or lies on each habitat: [kind, how many per tile (average)].
 const DETAILS = {
   forest: [['tuft', 3.2], ['pebble', 0.6]],
@@ -177,14 +169,15 @@ const DETAILS = {
   ruins: [['pebble', 1.6], ['tuft', 0.8]],
   crystal: [['pebble', 1.6]],
   ash: [['ember', 0.9], ['pebble', 1.0]],
-  tundra: [['snow', 0.5], ['pebble', 0.7], ['tuft', 0.3]],
-  summit: [['snow', 0.4], ['pebble', 1.4]],
+  tundra: [['pebble', 0.7], ['tuft', 0.4]],
+  summit: [['pebble', 1.6]],
+  ice: [['pebble', 0.3]],
 };
 
 // The small things of all the enclosures (rebuilt with the park): a Group of InstancedMeshes.
 export function groundDetails(world, T) {
   const { builder } = world;
-  const lists = { tuft: [], pebble: [], ember: [], snow: [] };
+  const lists = new Map(); // `${habitat}/${kind}` -> [{ x, z, r, s, edge }]
   for (const e of builder.enclosures.values()) {
     const kinds = DETAILS[e.habitat];
     if (!kinds) continue;
@@ -198,39 +191,57 @@ export function groundDetails(world, T) {
       const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
       for (const [kind, avg] of kinds) {
         const n = Math.floor(avg + rnd());
+        const key = `${e.habitat}/${kind}`;
+        if (!lists.has(key)) lists.set(key, []);
         for (let k = 0; k < n; k++) {
-          lists[kind].push({ x: (tx - 0.42 + rnd() * 0.84) * T, z: (ty - 0.42 + rnd() * 0.84) * T, r: rnd() * 6.28, s: rnd() });
+          const lx = (0.08 + rnd() * 0.84) * T, lz = (0.08 + rnd() * 0.84) * T;
+          lists.get(key).push({ x: (tx - 0.5) * T + lx, z: (ty - 0.5) * T + lz, r: rnd() * 6.28, s: rnd(), edge: edgeFactor(world, T, tx, ty, lx, lz) });
         }
       }
     }
   }
   const group = new THREE.Group();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-  const add = (list, geo, mat, scale, y = 0, shadow = true) => {
-    if (!list.length) return;
+  let tuftMap = null, pebble = null, ember = null, tuft = null;
+  for (const [key, list] of lists) {
+    if (!list.length) continue;
+    const [habitat, kind] = key.split('/');
+    let geo, mat, scale, y = 0.01;
+    if (kind === 'tuft') {
+      tuftMap ??= tuftTexture();
+      geo = tuft ??= tuftGeometry();
+      mat = new THREE.MeshStandardMaterial({ map: tuftMap, color: TUFT_TINT[habitat] ?? 0xe4f0cc, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 });
+      scale = (s) => { const k = 0.35 + s * 0.35; return [k, k, k]; };
+      y = 0;
+    } else if (kind === 'pebble') {
+      geo = pebble ??= new THREE.IcosahedronGeometry(1, 0);
+      mat = new THREE.MeshStandardMaterial({ color: 0x77706a, roughness: 0.95, flatShading: true });
+      scale = (s) => { const k = 0.06 + s * 0.12; return [k * 1.3, k * 0.6, k]; };
+    } else {
+      geo = ember ??= new THREE.DodecahedronGeometry(1, 0);
+      mat = new THREE.MeshStandardMaterial({ color: 0x2a1a12, emissive: 0xff5a10, emissiveIntensity: 0.9, roughness: 0.8, flatShading: true });
+      scale = (s) => { const k = 0.03 + s * 0.04; return [k * 1.2, k * 0.6, k]; };
+    }
+    onRelief(mat, habitat); // on the relief of the ground (lifted in the shader: their shadows would stay flat, so none)
     const im = new THREE.InstancedMesh(geo, mat, list.length);
+    const edge = new Float32Array(list.length);
     list.forEach((it, i) => {
       q.setFromAxisAngle(up, it.r);
       const s = scale(it.s);
       im.setMatrixAt(i, m4.compose(p.set(it.x, y, it.z), q, sc.set(s[0], s[1], s[2])));
+      edge[i] = it.edge;
     });
+    geo = im.geometry = geo.clone(); // (its own copy: the per-instance attribute goes on it)
+    geo.setAttribute('aEdge', new THREE.InstancedBufferAttribute(edge, 1));
     im.computeBoundingSphere();
-    im.castShadow = shadow;
+    im.boundingSphere.radius += 1;
+    im.castShadow = false;
     im.receiveShadow = true;
     im.userData.ownMaterial = true;
     group.add(im);
-  };
-  const tuftMap = lists.tuft.length ? tuftTexture() : null;
-  add(lists.tuft, tuftGeometry(), new THREE.MeshStandardMaterial({ map: tuftMap, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 }),
-    (s) => { const k = 0.35 + s * 0.35; return [k, k, k]; });
-  if (tuftMap) group.children[group.children.length - 1].userData.ownMap = tuftMap;
-  const pebble = new THREE.IcosahedronGeometry(1, 0);
-  add(lists.pebble, pebble, new THREE.MeshStandardMaterial({ color: 0x77706a, roughness: 0.95, flatShading: true }),
-    (s) => { const k = 0.06 + s * 0.12; return [k * 1.3, k * 0.6, k]; }, 0.01);
-  add(lists.ember, new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0x2a1a12, emissive: 0xff5a10, emissiveIntensity: 0.9, roughness: 0.8, flatShading: true }),
-    (s) => { const k = 0.03 + s * 0.04; return [k * 1.2, k * 0.6, k]; }, 0.01, false);
-  add(lists.snow, new THREE.CircleGeometry(1, 9).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xe8eef5, roughness: 0.9 }),
-    (s) => { const k = 0.18 + s * 0.3; return [k * 1.4, 1, k]; }, 0.025, false);
+  }
+  if (tuftMap) group.userData.ownMap = tuftMap;
+  for (const g of [pebble, ember, tuft]) g?.dispose(); // (the meshes have their copies)
   return group;
 }
 
@@ -267,52 +278,10 @@ float lavaHeight(vec2 xz) {
 }
 `;
 
-// The lava ground's geometry: each tile cut in small squares (so it can take the relief), and on each corner how
-// far it is from the enclosure's edge (`aEdge`, 0 at the walls, 1 from 1 m in: the relief fades out at the walls).
-export function lavaGeometry(world, T, tiles, size, y = 0.015) {
-  const { grid } = world;
-  const N = 10, step = T / N;
-  const same = (tx, ty, occ) => grid.inBounds(tx, ty) && grid.getTile(tx, ty).occupant === occ;
-  const pos = [], uv = [], edge = [], idx = [];
-  for (const { tx, ty } of tiles) {
-    const occ = grid.getTile(tx, ty).occupant;
-    const open = { l: same(tx - 1, ty, occ), r: same(tx + 1, ty, occ), u: same(tx, ty - 1, occ), d: same(tx, ty + 1, occ) };
-    const x0 = (tx - 0.5) * T, z0 = (ty - 0.5) * T, base = pos.length / 3;
-    for (let j = 0; j <= N; j++) {
-      for (let i = 0; i <= N; i++) {
-        const lx = i * step, lz = j * step, x = x0 + lx, z = z0 + lz;
-        let dist = 9;
-        if (!open.l) dist = Math.min(dist, lx);
-        if (!open.r) dist = Math.min(dist, T - lx);
-        if (!open.u) dist = Math.min(dist, lz);
-        if (!open.d) dist = Math.min(dist, T - lz);
-        pos.push(x, y, z);
-        uv.push(x / size, -z / size);
-        edge.push(Math.min(1, Math.max(0, (dist - 0.15) / 0.9)));
-      }
-    }
-    for (let j = 0; j < N; j++) {
-      for (let i = 0; i < N; i++) {
-        const a = base + j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1;
-        idx.push(a, c, b, b, c, d);
-      }
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('aEdge', new THREE.Float32BufferAttribute(edge, 1));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length).map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
-  g.setIndex(idx);
-  g.computeBoundingSphere();
-  g.boundingSphere.radius += 1;
-  return g;
-}
-
 // The lava ground: dark volcanic rock (`rock`, `rockN`), the molten lava only in winding channels and a few pools
 // (where a wide warped noise crosses its middle value), sunk below the rock, slowly flowing (`time`: the shared
 // clock, in seconds), with a glowing rim at the edge of the rock. The material's map / normalMap / emissiveMap are
-// the lava's. Its mesh is a lavaGeometry (the relief is made in the vertex shader).
+// the lava's. Its mesh is a reliefGeometry (the relief is made in the vertex shader).
 export function lavaChannels(mat, time, rock, rockN) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uFlowTime = time;

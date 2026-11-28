@@ -16,7 +16,8 @@ import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { drawBubble } from '../render/bubbles.js';
 import { Parking3D } from './parking3d.js';
-import { antiTile, lavaChannels, lavaGeometry, pathFringe, wallShade, groundDetails } from './grounds.js';
+import { antiTile, lavaChannels, reliefGeometry, pathFringe, wallShade, groundDetails } from './grounds.js';
+import { RELIEF, terrainMaterial } from './terrain.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
@@ -246,6 +247,9 @@ export class ParkScene {
       this.lavaMats = [...(this.lavaMats ?? []), m];
       this.flowTime ??= { value: 0 };
       lavaChannels(m, this.flowTime, this.tex(d.rock, true, `${d.rock}-lava`), this.tex(`${d.rock}-n`, false, `${d.rock}-n-lava`));
+    } else if (RELIEF[name]) {
+      const sec = RELIEF[name].second;
+      terrainMaterial(m, name, sec && { map: this.tex(sec, true, `${sec}-second`), normal: this.tex(`${sec}-n`, false, `${sec}-n-second`) }, d.minRough ?? 0.45);
     } else antiTile(m, d.minRough ?? 0.45);
     return m;
   }
@@ -297,7 +301,8 @@ export class ParkScene {
       this.s3.remove(old);
       old.traverse((o) => {
         o.geometry?.dispose();
-        if (o.userData.ownMaterial) { o.userData.ownMap?.dispose(); o.material.dispose(); }
+        o.userData.ownMap?.dispose();
+        if (o.userData.ownMaterial) o.material.dispose();
       });
     }
     const group = (this.groundGroup = new THREE.Group());
@@ -310,11 +315,10 @@ export class ParkScene {
       const e = tile && tile.occupant && builder.enclosures.get(tile.occupant);
       return !!e && WATERS[e.habitat] !== undefined;
     };
-    // (and under the lava, whose channels are dug below it)
+    // (and under the enclosures, whose grounds have their own relief, dug below it in places)
     const isLava = (tx, ty) => {
       const tile = grid.inBounds(tx, ty) && grid.getTile(tx, ty);
-      const e = tile && tile.occupant && builder.enclosures.get(tile.occupant);
-      return !!e && e.habitat === 'lava';
+      return !!tile && !!tile.occupant && builder.enclosures.has(tile.occupant);
     };
     const lawn = [];
     for (let ty = -RING; ty < grid.h + RING; ty++) for (let tx = -RING; tx < grid.w + RING; tx++) if (!isWater(tx, ty) && !isLava(tx, ty)) lawn.push({ tx, ty });
@@ -387,7 +391,7 @@ export class ParkScene {
       }
       if (!GROUNDS[k]) continue;
       if (!this.mats.has(k)) this.mats.set(k, this.groundMaterial(k));
-      const geo = k === 'lava' ? lavaGeometry(this.world, T, tiles, GROUNDS[k].size) : this.quads(tiles, 0.015, GROUNDS[k].size);
+      const geo = k === 'lava' || RELIEF[k] ? reliefGeometry(this.world, T, tiles, GROUNDS[k].size) : this.quads(tiles, 0.015, GROUNDS[k].size);
       const mesh = new THREE.Mesh(geo, this.mats.get(k));
       mesh.receiveShadow = true;
       group.add(mesh);
