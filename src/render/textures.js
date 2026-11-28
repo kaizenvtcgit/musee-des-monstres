@@ -202,6 +202,17 @@ export function generateTextures(scene) {
     g.fillTriangle(32, 0, 37, 14, 27, 14);
     g.fillTriangle(32, 18, 37, 4, 27, 4);
   });
+  // the cash machine: a grey box, its blue sign and dark screen
+  tex(scene, 'atm', 64, 64, (g) => {
+    g.fillStyle(0x3a3d42);
+    g.fillRect(20, 10, 24, 50);
+    g.fillStyle(0x1f2f6b);
+    g.fillRect(20, 8, 24, 8);
+    g.fillStyle(0x0c0e12);
+    g.fillRect(24, 20, 16, 11);
+    g.fillStyle(0x8a9099);
+    g.fillRect(24, 34, 16, 4);
+  });
   // the car park: a blue sign with a white P
   tex(scene, 'parking', 64, 64, (g) => {
     g.fillStyle(0x1f5fbf);

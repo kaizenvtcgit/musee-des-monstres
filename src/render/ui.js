@@ -16,6 +16,7 @@ const TOOLS = [
   { type: 'decoration', label: 'tool.decoration', icon: 'decoration', price: () => t('tool.price', { n: BALANCE.decorationCost }) },
   { type: 'snack', label: 'tool.snack', icon: 'snack', price: () => t('tool.price', { n: BALANCE.snackCost }) },
   { type: 'souvenir', label: 'tool.souvenir', icon: 'souvenir', price: () => t('tool.price', { n: BALANCE.souvenirCost }) },
+  { type: 'atm', label: 'tool.atm', icon: 'atm', price: () => t('tool.price', { n: BALANCE.atmCost }) },
   { type: 'parking', label: 'tool.parking', icon: 'parking', price: () => t('tool.price', { n: BALANCE.parkingCost }) },
   { type: 'keeper', label: 'tool.keeper', icon: 'keeper', price: () => t('tool.price', { n: BALANCE.keeperHireCost }), action: true },
   { type: 'demolish', label: 'tool.demolish', icon: null },
@@ -439,6 +440,10 @@ class UI {
         <div class="list">${stored}</div>`;
     }
 
+    if (sel.kind === 'building' && sel.type === 'atm') {
+      return `${close}<h3><img class="portrait" src="${this.img('atm')}">${esc(t('building.atm'))}</h3>
+        <div class="row">${esc(t('atm.effect', { n: Math.round((BALANCE.atmSpendBonus - 1) * 100) }))}</div>`;
+    }
     if (sel.kind === 'building') {
       return `${close}<h3><img class="portrait" src="${this.img(sel.type)}">${esc(t(`building.${sel.type}`))}</h3>`;
     }

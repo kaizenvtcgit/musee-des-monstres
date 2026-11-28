@@ -227,6 +227,19 @@ function canEnter(v, ctx, tile) {
   return v.grass || t.ground === 'path';
 }
 
+// Walking past a cash machine (on a tile next to it), a visitor takes cash, once: it then spends more.
+export function takeCash(v, ctx) {
+  if (v.cash) return;
+  const { grid, builder } = ctx;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const t = grid.inBounds(v.tile.tx + dx, v.tile.ty + dy) && grid.getTile(v.tile.tx + dx, v.tile.ty + dy);
+    if (t && t.occupant && builder.buildings.get(t.occupant)?.type === 'atm') {
+      v.cash = true;
+      return;
+    }
+  }
+}
+
 function move(v, ctx, dt) {
   let budget = (v.state === 'fleeing' ? FLEE_SPEED : WALK_SPEED) * dt;
   while (budget > 0) {
@@ -246,6 +259,7 @@ function move(v, ctx, dt) {
       v.pos.x = next.tx;
       v.pos.y = next.ty;
       v.tile = { tx: next.tx, ty: next.ty };
+      takeCash(v, ctx);
       v.path.shift();
       budget -= dist;
     } else {
@@ -278,14 +292,14 @@ function arrive(v, ctx) {
     return;
   }
   if (target.kind === 'snack' && ctx.builder.buildings.has(target.id)) {
-    ctx.wallet.earn(BALANCE.snackPrice);
+    ctx.wallet.earn(BALANCE.snackPrice * (v.cash ? BALANCE.atmSpendBonus : 1));
     v.ate = true;
     v.state = 'shopping';
     v.timer = SHOP_SEC;
     return;
   }
   if (target.kind === 'souvenir' && ctx.builder.buildings.has(target.id)) {
-    ctx.wallet.earn(BALANCE.souvenirPrice);
+    ctx.wallet.earn(BALANCE.souvenirPrice * (v.cash ? BALANCE.atmSpendBonus : 1));
     v.boughtSouvenir = true;
     v.state = 'shopping';
     v.timer = SHOP_SEC;

@@ -29,6 +29,7 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `node scripts/render-model/render-decor.mjs` | Refait les décorations d'enclos et les abris : le fichier 3D `src/assets/3d/decor.glb.json` et leurs icônes des menus (modèles Poly Haven téléchargés automatiquement, ou fabriqués dans `scripts/render-model/decor.html`). Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
 | `node scripts/render-model/render-ground.mjs` | Refait les icônes des sols (allée, habitats) à partir de textures photo, téléchargées automatiquement |
 | `node scripts/3d/glb-to-json.mjs fichier.glb` | Emballe un modèle `.glb` dans un `.glb.json` (voir « Modèles 3D ») |
+| `node scripts/3d/atm-to-glb.cjs` | Refait le distributeur de billets (`src/assets/3d/atm.glb.json`) à partir de `models/parking/` (détails en tête du script) |
 | `node scripts/3d/cars-to-glb.cjs` | Refait les voitures du parking (`src/assets/3d/cars.glb.json`) à partir de `models/cars/*.fbx` (détails en tête du script) |
 
 ## Comment jouer
@@ -61,6 +62,8 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   Le monstre s'y réfugie de temps en temps (plus souvent s'il est stressé) : il se repose à l'entrée, ou s'y cache.
   Il y est plus heureux, mais caché il n'attire plus les visiteurs.
 - **Snack**, **Souvenirs** (la Fabrique à Monstres) : les visiteurs y dépensent leur argent.
+- **Distributeur** (400 pièces) : un distributeur de billets à poser au bord d'une allée. Les visiteurs qui passent
+  devant retirent de l'argent et dépensent ensuite 25 % de plus au snack et à la boutique.
 - **Parking** (1 500 pièces, un seul) : à poser sur l'herbe devant l'entrée, entre le parc et la route (pas devant le
   portail). Les visiteurs viennent 30 % plus souvent, en voiture : elle arrive par la route, se gare, ses passagers
   (1 à 3) marchent jusqu'à l'entrée, et quand ils sont tous revenus elle sort en marche arrière et repart. Plein
@@ -140,6 +143,8 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - Voitures du parking : « [Cars Pack](https://quaternius.com/packs/cars.html) » de Quaternius (licence CC0),
   originaux dans `models/cars/`.
+- Distributeur de billets : modèle fourni pour le projet (`models/parking/ATM.fbx` et ses textures), refait en
+  `src/assets/3d/atm.glb.json` par `scripts/3d/atm-to-glb.cjs` (textures 512 px).
 - Bibliothèques : [three.js](https://threejs.org) (3D) et [Phaser](https://phaser.io) (boucle de jeu), licence MIT.
 - `docs/` : document de conception et plan de construction.
 

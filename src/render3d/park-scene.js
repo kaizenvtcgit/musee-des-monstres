@@ -521,6 +521,10 @@ vec2 flowUv(vec2 uv) {
         // a real kiosk next to the visitors: counter about waist high, the edge of its roof about 2.3 m up
         // (3.1 m across: it overhangs its tile a little)
         this.placeModel(group, model, cx, cz, 3.1, this.faceToPath(b) + front, b.id);
+      } else if (b.type === 'atm') {
+        // the cash machine (src/assets/3d/atm.glb.json, from models/parking/ATM.fbx): 0.67 m wide, its screen
+        // toward the path
+        this.placeModel(group, 'atm', cx, cz, 0.67, this.faceToPath(b), b.id);
       } else if (b.type === 'souvenir') {
         // the same: the edge of its roof about 2.4 m up, its dragon on top about 3.8 m
         this.placeModel(group, 'fabrique-a-monstres', cx, cz, 3.25, this.faceToPath(b), b.id);

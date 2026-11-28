@@ -7,6 +7,7 @@ const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
   snack: { size: 1, price: BALANCE.snackCost },
   souvenir: { size: 1, price: BALANCE.souvenirCost },
+  atm: { size: 1, price: BALANCE.atmCost }, // a cash machine (visitors walking past spend more: visitors.js)
   expeditionBase: { size: 3, price: 0 }, // a big military tent (older saved games: 2 x 2, see growBuilding)
   hatchery: { size: 2, price: 0 },
 };

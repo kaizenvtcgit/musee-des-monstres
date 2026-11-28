@@ -25,6 +25,8 @@ export const BALANCE = {
   hungerPerMin: 10,
   snackPrice: 8,
   souvenirPrice: 15,
+  atmCost: 400, // a cash machine: visitors walking past it then spend more at the stands
+  atmSpendBonus: 1.25, // what a visitor who took cash pays at a snack or souvenir shop, times the price
   decorationRadius: 3,
   // decorations inside an enclosure (src/config/decor.js), each one up to decorMaxCount:
   decorHappiness: 5, // + happiness points for its monsters
