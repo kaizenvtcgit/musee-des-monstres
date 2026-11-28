@@ -10,6 +10,9 @@ export const BALANCE = {
   keeperSalaryPerMin: 20,
   feedCost: 20,
   demolishRefund: 0.5,
+  bridgeCostPerTile: 50, // per tile of deck (5 x a path)
+  bridgeViewBonus: 0.25, // watching an enclosure from a bridge: that much more satisfaction
+  bridgeDeckHeight: 3.9, // metres: the tallest monster (golem, 3.4 m) walks under it
   ticketPriceDefault: 20,
   ticketPriceRef: 20,
   visitorBaseIntervalSec: 8,
