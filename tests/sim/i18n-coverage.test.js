@@ -14,6 +14,12 @@ describe('French strings', () => {
     for (const k of keys) expect(fr[k], k).toBeTypeOf('string');
   });
 
+  it('bridge strings exist', () => {
+    for (const k of ['tool.bridge', 'tool.bridgeHint', 'cost.bridge', 'error.bridgeTooShort', 'error.bridgeNoEnclosure', 'error.bridgeEnds', 'error.bridgeBlocked', 'error.underBridge']) {
+      expect(fr[k], k).toBeTypeOf('string');
+    }
+  });
+
   it('no mojibake (broken accents) in strings', () => {
     for (const [k, v] of Object.entries(fr)) expect(v, k).not.toMatch(/Ã|Â|Å/);
   });

@@ -129,3 +129,22 @@ describe('bridgeHeightAt', () => {
     expect(bridgeHeightAt(bridges, 2, 4)).toBe(0); // next to the stairs, not on them
   });
 });
+
+describe('traceToward', () => {
+  it('fills the tiles skipped by a fast pointer', async () => {
+    const { traceToward } = await import('../../src/sim/bridge.js');
+    expect(traceToward([{ tx: 1, ty: 1 }], { tx: 4, ty: 1 })).toEqual(row(1, 4, 1));
+    const t = traceToward([{ tx: 1, ty: 1 }], { tx: 3, ty: 3 });
+    expect(t).toHaveLength(5);
+    expect(t.at(-1)).toEqual({ tx: 3, ty: 3 });
+  });
+  it('going back along the trace takes tiles off', async () => {
+    const { traceToward } = await import('../../src/sim/bridge.js');
+    expect(traceToward(row(1, 5, 1), { tx: 2, ty: 1 })).toEqual(row(1, 2, 1));
+  });
+  it('stops where the trace would cross itself', async () => {
+    const { traceToward } = await import('../../src/sim/bridge.js');
+    const t = [{ tx: 1, ty: 1 }, { tx: 2, ty: 1 }, { tx: 2, ty: 2 }, { tx: 1, ty: 2 }, { tx: 0, ty: 2 }];
+    expect(traceToward(t, { tx: 2, ty: 2 })).toEqual(t.slice(0, 3)); // back onto an earlier tile: shortened to it
+  });
+});

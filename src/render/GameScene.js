@@ -12,6 +12,7 @@ import { canStepOver } from './stepover.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 import { t as tr } from '../i18n/index.js';
 import { faceToPath } from '../sim/facing.js';
+import { traceToward, checkBridge } from '../sim/bridge.js';
 import { BALANCE } from '../config/balance.js';
 import { Sounds } from './sound.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
@@ -360,12 +361,14 @@ export class GameScene extends Phaser.Scene {
   toolDown(tile) {
     if (this.tool.type === 'enclosure') this.dragStart = tile;
     if (this.tool.type === 'path') this.pathStart = tile; // a straight path, laid when let go
+    if (this.tool.type === 'bridge') this.bridgeTrace = [{ tx: tile.tx, ty: tile.ty }]; // drawn tile by tile
   }
 
   // pointer over a tile (`leftDown`: the left button is held). The start of a path being dragged is kept
   // until the button is let go (toolUp) or the drag called off (toolCancel): the 3D view also calls this
   // right after toolDown, with leftDown false.
-  toolMove(tile, leftDown) { // eslint-disable-line no-unused-vars
+  toolMove(tile, leftDown) {
+    if (this.tool.type === 'bridge' && leftDown && this.bridgeTrace) this.bridgeTrace = traceToward(this.bridgeTrace, tile);
     return this.ghostCells(tile);
   }
 
@@ -373,6 +376,7 @@ export class GameScene extends Phaser.Scene {
   toolCancel() {
     this.dragStart = null;
     this.pathStart = null;
+    this.bridgeTrace = null;
     this.ui.hint(null);
   }
 
@@ -407,6 +411,11 @@ export class GameScene extends Phaser.Scene {
       case 'path':
         if (this.pathStart) this.placePathLine(this.pathStart, tile);
         this.pathStart = null;
+        this.ui.hint(null);
+        break;
+      case 'bridge':
+        if (this.bridgeTrace) this.report(b.placeBridge(traceToward(this.bridgeTrace, tile)));
+        this.bridgeTrace = null;
         this.ui.hint(null);
         break;
       case 'enclosure': {
@@ -541,6 +550,20 @@ export class GameScene extends Phaser.Scene {
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (grid.inBounds(x, y)) diamondAt(x, y, ok);
       const cost = enclosurePrice(this.dragStart.tx, this.dragStart.ty, tile.tx, tile.ty);
       this.showCost(tr('cost.enclosure', { w: x1 - x0 + 1, h: y1 - y0 + 1, cost: fmtCost(cost) }), cost);
+      return cells;
+    }
+    if (type === 'bridge') {
+      // the bridge being drawn: green, or its faulty tiles in red with the reason
+      if (!this.bridgeTrace) {
+        if (grid.inBounds(tile.tx, tile.ty)) diamondAt(tile.tx, tile.ty, grid.isWalkable(tile.tx, tile.ty) || grid.isFree(tile.tx, tile.ty));
+        this.ui.hint(tr('tool.bridgeHint'));
+        return cells;
+      }
+      const r = checkBridge(grid, this.world.builder, this.bridgeTrace);
+      const bad = new Set((r.bad ?? []).map((c) => `${c.tx},${c.ty}`));
+      for (const c of this.bridgeTrace) diamondAt(c.tx, c.ty, r.ok || (!bad.has(`${c.tx},${c.ty}`) && bad.size > 0));
+      if (r.ok) this.showCost(tr('cost.bridge', { n: r.deck.length, cost: fmtCost(r.cost) }), r.cost);
+      else this.ui.hint(tr(`error.${r.reason}`), true);
       return cells;
     }
     if (type === 'path' && this.pathStart) {

@@ -27,6 +27,7 @@ export const fr = {
   'test.badge': 'MODE TEST · argent illimité',
   'test.help': 'Partie de test séparée de ta vraie partie. Retire « ?test » de l\'adresse pour revenir à ta partie.',
   'cost.path': '{n} cases · {cost} pièces',
+  'cost.bridge': '{n} cases de pont · {cost} pièces',
   'cost.enclosure': '{w} × {h} · {cost} pièces',
   'event.keeperHired': 'Gardien embauché ({n} pièces / min)',
   'monster.inHatchery': 'Dans la couveuse, en attente d\'un enclos',
@@ -51,6 +52,8 @@ export const fr = {
   'error.otherSpecies': 'Cet enclos abrite déjà une autre espèce',
 
   'tool.path': 'Allée',
+  'tool.bridge': 'Pont',
+  'tool.bridgeHint': "Pars d'une allée, glisse case par case au-dessus d'un enclos et relâche de l'autre côté",
   'tool.enclosure': 'Enclos',
   'tool.decoration': 'Décoration',
   'tool.snack': 'Snack',
@@ -117,6 +120,11 @@ export const fr = {
   'event.caught': '{name} est de retour dans son enclos',
 
   'error.notInEnclosure': 'Place cette décoration dans un enclos',
+  'error.bridgeTooShort': 'Ce pont est trop court',
+  'error.bridgeNoEnclosure': "Un pont doit passer au-dessus d'un enclos",
+  'error.bridgeEnds': "Les deux bouts du pont doivent arriver sur une allée ou sur l'herbe, hors de l'enclos",
+  'error.bridgeBlocked': 'Quelque chose bloque le passage du pont',
+  'error.underBridge': 'Pas assez de place sous le pont',
   'error.wrongDecorHabitat': 'Cette décoration ne va pas dans cet habitat',
   'shelter.title': 'Abri',
   'shelter.help': '3 × 3 cases dans un enclos d\'au moins 15 cases : le monstre s\'y réfugie de temps en temps (plus heureux, mais parfois caché)',

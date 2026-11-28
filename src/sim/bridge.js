@@ -17,6 +17,26 @@ export function extendTrace(trace, tile) {
   return [...trace, cell(tile)];
 }
 
+// The trace drawn on to `tile`, filling the tiles a fast pointer skipped (one step at a time, along the
+// longer side first). Back onto a tile of the trace: shortened to it. Stops before crossing itself.
+export function traceToward(trace, tile) {
+  if (!trace.length) return [cell(tile)];
+  const i = trace.findIndex((c) => same(c, tile));
+  if (i >= 0) return trace.slice(0, i + 1);
+  let t = trace;
+  for (let guard = 0; guard < 400 && !same(t[t.length - 1], tile); guard++) {
+    const last = t[t.length - 1];
+    const dx = Math.sign(tile.tx - last.tx), dy = Math.sign(tile.ty - last.ty);
+    const steps = Math.abs(tile.tx - last.tx) >= Math.abs(tile.ty - last.ty)
+      ? [{ tx: last.tx + dx, ty: last.ty }, { tx: last.tx, ty: last.ty + dy }]
+      : [{ tx: last.tx, ty: last.ty + dy }, { tx: last.tx + dx, ty: last.ty }];
+    const next = steps.find((c) => !same(c, last) && !t.some((x) => same(x, c)));
+    if (!next) break;
+    t = [...t, next];
+  }
+  return t;
+}
+
 // Whether the bridge can be built along `trace`, and what it would lay:
 // { ok: true, deck, paths, stairs, cost } or { ok: false, reason, bad }.
 // paths: the grass tiles of the trace, which get a path (under the deck too, between two enclosures).
