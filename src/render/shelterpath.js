@@ -7,10 +7,11 @@
 // monster (SHELTER_MODEL_SCALE: the cave keeps the size it had next to that monster), so every distance
 // below, measured on the models, is scaled the same way.
 
-// Scale of each shelter model in the 3D view: (height of its monster in the 3D view, in tiles) / (its height
-// in the models, in Blender units): the dragon 2.2 m / 1.8, the kraken 2.4 / 1.5, the golem 3.4 / 2.6,
-// the yeti 3.0 / 2.2, the ghost 2.5 / 1.5, with 2.5 m per tile.
-export const SHELTER_MODEL_SCALE = { lava: 0.49, water: 0.64, forest: 0.52, ice: 0.55, dark: 0.67 };
+// Scale of each shelter model in the 3D view (tiles per model unit), so that its monster, as tall and wide
+// as in the 3D view (src/render3d/park-scene.js, 2.5 m per tile), walks into the opening standing, with
+// about 10 % to spare above it: the dragon (2.2 m tall), the kraken (swimming, 4.2 m across its tentacles),
+// the golem (3.4 m), the yeti (2.9 m), the ghost (2.5 m, floating). The shelters then take 2.3 to 3.1 tiles.
+export const SHELTER_MODEL_SCALE = { lava: 0.82, water: 0.88, forest: 0.9, ice: 0.72, dark: 0.82 };
 const modelScale = (sh, n) => (SHELTER_MODEL_SCALE[sh?.family] ?? 0.55) * (n / 3);
 
 // Where the rock face (the mouth's outline) stands, from the centre (model units).
