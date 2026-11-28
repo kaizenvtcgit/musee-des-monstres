@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { ParkScene, T, RING } from './park-scene.js';
 import { WalkMode } from './visit.js';
 import { t } from '../i18n/index.js';
+import { TILE_W, TILE_H } from '../sim/iso.js';
 
 const DIST = { min: 7, max: 150, start: 48 }; // m, camera to the point looked at
 const ELEV = { min: 0.22, max: 1.5, start: 0.82 }; // radians above the horizon
@@ -331,6 +332,27 @@ class Park3D {
     scene.input.enabled = false;
     if (scene.input.keyboard) scene.input.keyboard.enabled = false;
     scene.game.canvas.style.visibility = 'hidden';
+    scene.hidden3d = true; // no 2D particles (src/render/monsterfx.js)
+    if (scene.sounds) scene.sounds.placer = (x, y) => this.hear(x, y);
+  }
+
+  // Loudness and stereo position of a sound at a point of the 2D map (screen pixels of the isometric view),
+  // heard from the 3D camera: softer with the distance, softer still off screen (from above), panned to
+  // its side. Null when too far to be heard.
+  hear(x, y) {
+    const a = x / (TILE_W / 2), b = y / (TILE_H / 2);
+    const p = new THREE.Vector3(((a + b) / 2) * T, 1, ((b - a) / 2) * T);
+    const cam = this.camera;
+    const d = cam.position.distanceTo(p);
+    let vol = THREE.MathUtils.clamp(1 - (d - 10) / 120, 0, 1);
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    const dir = p.clone().sub(cam.position).normalize();
+    if (this.mode === 'top') {
+      const n = p.clone().project(cam);
+      if (n.z > 1 || Math.abs(n.x) > 1.2 || Math.abs(n.y) > 1.2) vol *= 0.4;
+    }
+    if (vol < 0.03) return null;
+    return { vol, pan: THREE.MathUtils.clamp(dir.dot(right) * 0.9, -0.8, 0.8) };
   }
 
   buildDom() {

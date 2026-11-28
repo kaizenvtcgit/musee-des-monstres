@@ -11,6 +11,9 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { tilesOf, containsTile } from '../sim/enclosure.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
+import { ENCLOSURE_DECOR } from '../config/decor.js';
+import { drawBubble } from '../render/bubbles.js';
+import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
 const ASSETS = import.meta.glob('../assets/3d/**/*.{json,webp}', { eager: true, query: '?url', import: 'default' });
@@ -26,6 +29,16 @@ const MONSTERS = {
   kraken: { height: 2.4, walk: 'Crawl', idle: 'Idle', sink: 0.45 }, // swims, sunk to the eyes
   spectre: { height: 2.5, walk: 'Float', idle: 'Idle', hover: 0.35 },
   yeti: { height: 3.0, walk: 'Walk', idle: 'Idle' },
+};
+// The 2D animations of the monsters (the kind in their key, "golem-slam-d3") and the clips of the 3D
+// models playing them: the first one the model has. "sitdown" is the wake-up played backwards, "statue" the
+// idle pose frozen (the 2D animation stops: so does the clip).
+const CLIPS = {
+  idle: ['Idle'], statue: ['Idle'], walk: ['Walk', 'Crawl', 'Float'], run: ['Run', 'Walk', 'Crawl', 'Float'],
+  fly: ['Fly', 'Walk'], flap: ['FlapWings'], stretch: ['Stretch', 'StretchWings'], look: ['Look Around', 'LookAround'],
+  tail: ['TailWag'], chestbeat: ['ChestBeat'], slam: ['GroundSlam'], threat: ['Threat'], sleep: ['Sleep'],
+  wakeup: ['WakeUp'], sitdown: ['WakeUp'], shake: ['RockShake', 'ShakeFur'], wiggle: ['Tentacle Wiggle'],
+  haunt: ['Haunt'], scratch: ['ScratchHead'], happy: ['Happy'], wave: ['Wave'],
 };
 const VISITOR_MODELS = ['person-men-casual_2', 'person-women-casual', 'person-men-suit', 'person-women-formal'];
 const KEEPER_MODEL = 'person-men-worker';
@@ -49,6 +62,17 @@ const GROUNDS = {
 };
 // water habitats: colour of the water
 const WATERS = { water: 0x1f6474, reef: 0x1f7a7c, abyss: 0x0a1a2c, swamp: 0x3a4226 };
+// The garden decoration (a building of one tile): its looks, picked from its id (the first six as in 2D).
+// name: prop of props.glb.json (or `decor`: a node of decor.glb.json), its height or width in metres.
+const GARDEN = [
+  { name: 'pottedPlant', height: 1.3 },
+  { name: 'shrubClump', height: 1.2 },
+  { name: 'streetLamp', height: 3.6 },
+  { name: 'parkBench', width: 1.7, facePath: true },
+  { name: 'flowerBox', width: 1.7, facePath: true },
+  { name: 'mossRocks', decor: 'mossRocks' },
+  { name: 'trashCan', height: 1.0, facePath: true },
+];
 
 export class ParkScene {
   // `scene`: the (hidden) Phaser GameScene, for where the monsters wander; may come later (setScene).
@@ -81,6 +105,7 @@ export class ParkScene {
     this.buildGround();
     this.buildWalls();
     this.buildBuildings();
+    this.buildDecor();
     this.buildTrees();
     this.lastGrid = this.world.grid.version;
   }
@@ -421,15 +446,7 @@ export class ParkScene {
     if (old) this.s3.remove(old);
     const group = (this.buildGroup = new THREE.Group());
     this.s3.add(group);
-    const wood = new THREE.MeshStandardMaterial({ color: 0x9b7653, roughness: 0.8 });
-    const white = new THREE.MeshStandardMaterial({ color: 0xf1ece2, roughness: 0.7 });
-    const add = (geo, mat, x, y, z) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.castShadow = m.receiveShadow = true;
-      group.add(m);
-      return m;
-    };
+    const garden = new Map(); // variant -> { matrices, ids }
     for (const b of this.world.builder.buildings.values()) {
       const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
       if (b.type === 'snack') {
@@ -445,16 +462,79 @@ export class ParkScene {
       } else if (b.type === 'expeditionBase') {
         this.placeModel(group, 'expedition-base', cx, cz, 4.8, this.faceToPath(b), b.id);
       } else {
-        // a garden decoration: a round bush in flowers
-        add(new THREE.IcosahedronGeometry(0.9, 1), new THREE.MeshStandardMaterial({ color: 0x4f7d3a, roughness: 0.9, flatShading: true }), cx, 0.7, cz)
-          .userData.buildingId = b.id;
+        // a garden decoration: one of several props, picked from the building id so it never changes
+        const n = Number(String(b.id).replace(/\D/g, '')) || 0;
+        const v = GARDEN[n % GARDEN.length];
+        const rot = v.facePath ? this.faceToPath(b) : (n * 2.39996) % (Math.PI * 2);
+        const g = garden.get(v.name) ?? garden.set(v.name, { v, items: [], ids: [] }).get(v.name);
+        g.items.push({ cx, cz, rot });
+        g.ids.push(b.id);
       }
     }
-    // the entrance gate
+    // the entrance gate (open), across the entrance path
     const { tx, ty } = this.world.entrance;
-    const ex = tx * T, ez = ty * T;
-    for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.5, 3.6, 0.5), white, ex + s * 1.5, 1.8, ez);
-    add(new THREE.BoxGeometry(3.6, 0.7, 0.2), wood, ex, 3.4, ez);
+    const needDecor = [...garden.values()].some((g) => g.v.decor);
+    Promise.all([this.props(), needDecor ? this.decorNodes() : new Map()]).then(([props, decor]) => {
+      if (this.buildGroup !== group) return; // rebuilt meanwhile
+      const gate = props.get('entranceGate');
+      if (gate) group.add(instanceGroup(gate, [place(tx * T, 0, ty * T, 0, 3.7 / gate.userData.size.x)], { base: null }));
+      for (const { v, items, ids } of garden.values()) {
+        const tpl = v.decor ? decor.get(v.decor) : props.get(v.name);
+        if (!tpl) continue;
+        // its size: props in metres (largest side, or height), decorations in tiles
+        const size = tpl.userData.size;
+        const k = v.decor ? T : v.height ? v.height / size.y : v.width / Math.max(size.x, size.z);
+        const mats = items.map(({ cx, cz, rot }) => place(cx, 0, cz, rot, k));
+        group.add(instanceGroup(tpl, mats, { base: v.decor ? tpl.parent : null, ids }));
+      }
+    }).catch((err) => console.error(err));
+  }
+
+  // The props (Poly Haven models) and the enclosure decorations, loaded once (see scenery.js).
+  props() {
+    this.propsP ??= this.model('props').then((m) => prepareProps(m.gltf));
+    return this.propsP;
+  }
+
+  decorNodes() {
+    this.decorP ??= this.model('decor').then((m) => prepareDecor(m.scene));
+    return this.decorP;
+  }
+
+  // The decorations and shelters inside the enclosures, rebuilt with the park; copies of the same one are
+  // drawn together (instancing). In water they sit lower, their waterline at the surface.
+  buildDecor() {
+    const old = this.decorGroup;
+    if (old) this.s3.remove(old);
+    const group = (this.decorGroup = new THREE.Group());
+    this.s3.add(group);
+    const byNode = new Map();
+    const add = (name, m) => (byNode.get(name) ?? byNode.set(name, []).get(name)).push(m);
+    const WATER_Y = -0.12, BOTTOM = -0.9;
+    for (const e of this.world.builder.enclosures.values()) {
+      const wet = WATERS[e.habitat] !== undefined;
+      const y = (wl) => (wet ? Math.max(BOTTOM, WATER_Y - wl * T) : 0);
+      for (const d of e.decor ?? []) {
+        if (!ENCLOSURE_DECOR[d.type]) continue;
+        // the variant, turned differently, picked from the tile as in 2D (render-decor.mjs: 0 or 140 degrees)
+        const v = (d.tx * 7 + d.ty * 13) % 2;
+        add(d.type, { tx: d.tx, ty: d.ty, rot: v ? THREE.MathUtils.degToRad(140) : 0, y });
+      }
+      const sh = e.shelter;
+      // its 2 x 2 tiles, its entrance toward +y (+z here)
+      if (sh) add(`shelter-${sh.family}`, { tx: sh.tx + 0.5, ty: sh.ty + 0.5, rot: 0, y });
+    }
+    if (!byNode.size) return;
+    this.decorNodes().then((nodes) => {
+      if (this.decorGroup !== group) return; // rebuilt meanwhile
+      for (const [name, list] of byNode) {
+        const node = nodes.get(name);
+        if (!node) continue;
+        const wl = node.userData.waterline ?? 0;
+        const items = list.map((it) => ({ x: it.tx * T, z: it.ty * T, matrix: place(it.tx * T, it.y(wl), it.ty * T, it.rot, T) }));
+        group.add(chunkedInstances(node, items, 40, { base: node.parent }));
+      }
+    }).catch((err) => console.error(err));
   }
 
   // A building model on its tiles: `width` metres across (its widest side), turned by `rot` (radians),
@@ -612,38 +692,62 @@ export class ParkScene {
     }
   }
 
+  // The forest around the park: Poly Haven fir and pine saplings grown to tree size, drawn by areas
+  // (instancing, the areas out of view are skipped).
   buildTrees() {
     const { grid } = this.world;
     let seed = 12345;
     const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-    const pines = [], oaks = [];
-    for (let ty = -RING; ty < grid.h + RING; ty += 2) {
-      for (let tx = -RING; tx < grid.w + RING; tx += 2) {
+    const trees = [];
+    for (let ty = -RING; ty < grid.h + RING; ty += 1.4) {
+      for (let tx = -RING; tx < grid.w + RING; tx += 1.4) {
         const out = Math.max(-tx, -ty, tx - grid.w + 1, ty - grid.h + 1);
         if (out < 2) continue;
-        if (rnd() > 0.35 + out * 0.1) continue;
-        const x = (tx + rnd() * 0.8) * T, z = (ty + rnd() * 0.8) * T;
-        (rnd() < 0.5 ? pines : oaks).push([x, z, 0.8 + rnd() * 0.6, rnd() * 6.28]);
+        if (rnd() > 0.32 + out * 0.11) continue;
+        const x = (tx + rnd() * 0.9) * T, z = (ty + rnd() * 0.9) * T;
+        // a clearing in front of the entrance gate, where the visitors come from
+        if (Math.hypot(x / T - this.world.entrance.tx, z / T - this.world.entrance.ty) < 8) continue;
+        trees.push({ x, z, fir: rnd() < 0.35, h: 5 + rnd() * 4 + out * 0.3, rot: rnd() * 6.28 });
       }
     }
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b4030, roughness: 1 });
-    const pineMat = new THREE.MeshStandardMaterial({ color: 0x2f5a37, roughness: 1, flatShading: true });
-    const oakMat = new THREE.MeshStandardMaterial({ color: 0x4d7a35, roughness: 1, flatShading: true });
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
-    const make = (geo, mat, list, y, sx = 1) => {
-      const im = new THREE.InstancedMesh(geo, mat, list.length);
-      list.forEach(([x, z, s, r], i) => {
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r);
-        im.setMatrixAt(i, m4.compose(p.set(x, y * s, z), q, sc.set(s * sx, s, s * sx)));
-      });
-      im.castShadow = true;
-      im.receiveShadow = true;
-      this.s3.add(im);
-    };
-    make(new THREE.CylinderGeometry(0.18, 0.28, 2.4, 6), trunkMat, [...pines, ...oaks], 1.2);
-    make(new THREE.ConeGeometry(1.9, 5.5, 7), pineMat, pines, 4.6);
-    make(new THREE.ConeGeometry(1.4, 3.6, 7), pineMat, pines, 6.6);
-    make(new THREE.IcosahedronGeometry(2.4, 1), oakMat, oaks, 4.2, 1.1);
+    // by areas of 30 m: near the camera the full trees, further the light pine (see updateForest)
+    const CELL = 30;
+    const areas = new Map();
+    for (const t of trees) {
+      const k = `${Math.floor(t.x / CELL)},${Math.floor(t.z / CELL)}`;
+      (areas.get(k) ?? areas.set(k, []).get(k)).push(t);
+    }
+    this.props().then((props) => {
+      const group = new THREE.Group();
+      const low = props.get('pineTreeLow');
+      this.forest = [];
+      for (const list of areas.values()) {
+        const near = new THREE.Group();
+        for (const [name, fir] of [['firTree', true], ['pineTree', false]]) {
+          const tpl = props.get(name);
+          const mine = list.filter((t) => t.fir === fir);
+          if (tpl && mine.length) near.add(instanceGroup(tpl, mine.map((t) => place(t.x, 0, t.z, t.rot, t.h / tpl.userData.size.y)), { base: null }));
+        }
+        // (far away, no shadows: they would fall outside the shadowed square anyway)
+        const far = low ? instanceGroup(low, list.map((t) => place(t.x, 0, t.z, t.rot, t.h / low.userData.size.y)), { base: null, shadow: false }) : null;
+        const cx = list.reduce((a, t) => a + t.x, 0) / list.length, cz = list.reduce((a, t) => a + t.z, 0) / list.length;
+        group.add(near);
+        if (far) group.add(far);
+        this.forest.push({ x: cx, z: cz, near, far });
+      }
+      this.s3.add(group);
+      this.treeCount = trees.length;
+    }).catch((err) => console.error(err));
+  }
+
+  // The areas of forest near the camera with their full trees, the others with the light ones.
+  updateForest(camera) {
+    const NEAR = 45;
+    for (const a of this.forest ?? []) {
+      const d = Math.hypot(camera.position.x - a.x, camera.position.z - a.z, camera.position.y);
+      a.near.visible = !a.far || d < NEAR;
+      if (a.far) a.far.visible = !a.near.visible;
+    }
   }
 
   // ---------------------------------------------------------------- models
@@ -670,7 +774,7 @@ export class ParkScene {
             }
           });
           const box = new THREE.Box3().setFromObject(g.scene);
-          return { scene: g.scene, animations: g.animations, box };
+          return { scene: g.scene, animations: g.animations, box, gltf: g };
         });
       this.models.set(name, p);
     }
@@ -724,23 +828,94 @@ export class ParkScene {
       const d = Math.hypot(dx, dz);
       const speed = d / Math.max(dt, 1e-3);
       e.obj.position.set(nx, it.y3 ?? 0, nz);
-      if (d > 0.002) {
-        const target = Math.atan2(dx, dz);
-        let diff = target - e.obj.rotation.y;
-        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-        e.obj.rotation.y += diff * Math.min(1, dt * 8);
-      }
-      e.moving = (e.moving ?? 0) * 0.8 + (speed > 0.15 ? 0.2 : 0);
       e.obj.visible = it.visible !== false;
-      this.play(e, e.moving > 0.5 ? it.walk : it.idle);
-      if (e.actions?.[it.walk]) e.actions[it.walk].timeScale = it.walkScale ?? 1;
+      e.moving = (e.moving ?? 0) * 0.8 + (speed > 0.15 ? 0.2 : 0);
+      if (it.drive?.sprite.anims?.currentAnim) {
+        this.followAnimation(e, it.drive, d > 0.002 ? Math.atan2(dx, dz) : null, dt);
+      } else {
+        if (d > 0.002) this.turnTo(e, Math.atan2(dx, dz), dt);
+        this.play(e, e.moving > 0.5 ? it.walk : it.idle);
+        if (e.actions?.[it.walk]) e.actions[it.walk].timeScale = it.walkScale ?? 1;
+      }
       e.mixer.update(dt);
+      this.syncBubble(e, it.bubble, it.icon);
     }
     for (const [id, e] of map) {
       if (seen.has(id)) continue;
       if (e.obj) this.s3.remove(e.obj);
+      if (e.bubble) this.s3.remove(e.bubble);
       map.delete(id);
     }
+  }
+
+  // The mood bubble of the 2D entry (bubble-happy, -bored, -hungry, -scared...) over the head: the same
+  // picture, always facing the camera and the same size on screen whatever the zoom.
+  // `icon`: a bubble of the 3D view only (the keeper's alert while chasing).
+  syncBubble(e, entry, icon) {
+    const b = entry?.bubble;
+    const key = (b && b.visible ? b.texture.key : null) ?? icon ?? null;
+    if (!key) {
+      if (e.bubble) e.bubble.visible = false;
+      return;
+    }
+    if (!e.bubble) {
+      e.bubble = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false, fog: false }));
+      e.bubble.center.set(0.5, 0);
+      e.bubble.renderOrder = 20;
+      e.bubble.scale.setScalar(0.06);
+      this.s3.add(e.bubble);
+    }
+    if (e.bubbleKey !== key) {
+      e.bubbleKey = key;
+      e.bubble.material.map = this.bubbleTexture(key);
+      e.bubble.material.needsUpdate = true;
+    }
+    e.bubble.visible = e.obj.visible;
+    const p = e.obj.position;
+    e.bubble.position.set(p.x, p.y + (e.height ?? 1.7) + 0.3, p.z);
+  }
+
+  bubbleTexture(key) {
+    this.bubbleTex ??= new Map();
+    if (!this.bubbleTex.has(key)) {
+      // drawn big (src/render/bubbles.js) so it stays sharp, else the 2D picture
+      const img = drawBubble(key, 96) ?? this.scene?.textures.get(key).getSourceImage();
+      if (!img) return null;
+      const tx = new THREE.CanvasTexture(img);
+      tx.colorSpace = THREE.SRGBColorSpace;
+      this.bubbleTex.set(key, tx);
+    }
+    return this.bubbleTex.get(key);
+  }
+
+  turnTo(e, target, dt) {
+    let diff = target - e.obj.rotation.y;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    e.obj.rotation.y += diff * Math.min(1, dt * 8);
+  }
+
+  // A monster plays what its (hidden) 2D sprite plays: the clip of the same behaviour, at the same point of
+  // it (the clip's time follows the 2D animation's progress, so speed, pauses and the game speed follow).
+  // It faces where it walks, or when still the 2D direction (8 directions, d0 toward +y: dir x 45 degrees).
+  followAnimation(e, { sprite, dir }, heading, dt) {
+    const anims = sprite.anims;
+    const parts = anims.currentAnim.key.split('-');
+    const kind = parts[parts.length - 2];
+    this.turnTo(e, heading ?? (dir * Math.PI) / 4, dt);
+    const name = (CLIPS[kind] ?? CLIPS.idle).find((c) => e.actions[c]) ?? (e.actions.Idle ? 'Idle' : null);
+    if (!name) return;
+    this.play(e, name, 0.25);
+    const act = e.actions[name];
+    act.timeScale = 0; // its time is set here
+    const p = Math.max(0, Math.min(1, anims.getProgress() || 0));
+    act.time = (kind === 'sitdown' ? 1 - p : p) * act.getClip().duration * 0.999;
+    e.kind2d = kind;
+  }
+
+  // what the 2D sprite of a visitor or keeper plays and its mood bubble (see followAnimation, syncBubble)
+  follow(id) {
+    const entry = this.scene?.entitySprites?.get(id);
+    return entry?.sprite ? { drive: { sprite: entry.sprite, dir: entry.dir ?? 0 }, bubble: entry } : {};
   }
 
   syncMonsters(dt) {
@@ -757,7 +932,8 @@ export class ParkScene {
       const y3 = (look.hover ?? 0) - (inWater && look.sink ? look.sink * look.height : 0);
       items.push({
         id: m.id, kind: 'monster', h: look.height, x: p.x, y: p.y, y3, species: m.speciesId, walk: look.walk, idle: look.idle,
-        visible: (entry?.hideK ?? 1) > 0.3,
+        visible: (entry?.hideK ?? 1) > 0.3, drive: entry?.sprite ? { sprite: entry.sprite, dir: entry.dir ?? 0 } : null,
+        bubble: entry,
       });
     }
     this.sync(this.monsters, items, (it) => this.spawn(it.species, MONSTERS[it.species].height * (0.9 + Math.random() * 0.2)), dt);
@@ -770,11 +946,11 @@ export class ParkScene {
     for (const v of this.world.visitors) {
       if (v.state === 'gone' || !v.pos || !near(v.pos.x, v.pos.y)) continue;
       const k = [...v.id].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
-      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, model: VISITOR_MODELS[k % VISITOR_MODELS.length], walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04 });
+      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, model: VISITOR_MODELS[k % VISITOR_MODELS.length], walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
     }
     for (const kp of this.world.keepers) {
       if (!kp.pos || !near(kp.pos.x, kp.pos.y)) continue;
-      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8 });
+      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8, ...this.follow(kp.id), icon: kp.state === 'chasing' ? 'bubble-alert' : null });
     }
     this.sync(this.people, items, (it) => this.spawn(it.model, it.h), dt);
   }
@@ -827,6 +1003,8 @@ export class ParkScene {
   pickBuilding(ray) {
     if (!this.buildGroup) return null;
     for (const h of ray.intersectObject(this.buildGroup, true)) {
+      const ids = h.object.userData.instanceIds;
+      if (ids && h.instanceId !== undefined) return ids[h.instanceId];
       for (let o = h.object; o && o !== this.buildGroup; o = o.parent) {
         if (o.userData.buildingId) return o.userData.buildingId;
       }
@@ -872,6 +1050,7 @@ export class ParkScene {
       this.buildGround();
       this.buildWalls();
       this.buildBuildings();
+      this.buildDecor();
     }
     this.syncMonsters(dt);
     this.syncPeople(dt);
@@ -890,6 +1069,7 @@ export class ParkScene {
   }
 
   render(camera) {
+    this.updateForest(camera);
     this.renderer.render(this.s3, camera);
   }
 

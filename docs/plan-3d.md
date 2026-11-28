@@ -48,7 +48,11 @@ La « Visite 3D » à pied (déjà faite) devient un simple mode de caméra.
    `drawGhost` renvoie ses cases via `ghostCells`, `selectAt(tile, pointer, hit)` accepte ce que la 3D a touché ;
    `ParkScene.pick` = rayon → sol + monstre / personne / bâtiment, `showGhost` = cases colorées ; fiche « Gardien » ajoutée) : picking, fantômes 3D, tous les outils (allées, enclos, bâtiments, démolition), clic sur
    monstre / visiteur / bâtiment pour ouvrir sa fiche.
-3. **Décors, abris, comportements, bulles, sons** ; remplacer le portail d'entrée (blocs blancs), la décoration
+3. ✅ **Décors, abris, comportements, bulles, sons** (fait : `scenery.js` = instanciation + retouches lave/neige/lueur +
+   gueule posée sur la roche + accessoires Poly Haven de `props.glb.json` (portail ouvert, sapins avec version légère au loin,
+   banc, lampadaire, poubelle, pot, arbuste, jardinière) ; les monstres et personnes jouent le clip de leur animation 2D,
+   temps calé sur `getProgress()` ; bulles dessinées par `src/render/bubbles.js` (2D 24 px, 3D 96 px, « ! » du gardien en
+   poursuite) ; `Sounds.placer` = écoute depuis la caméra 3D ; `prop-gate.png` retiré pour rester à 511 fichiers) : remplacer le portail d'entrée (blocs blancs), la décoration
    de jardin (boule verte) et les arbres par des modèles (Poly Haven CC0 ou modèles fournis par l'utilisateur).
 4. **Nettoyage et publication** : supprimer les images 2D devenues inutiles (la page en ligne est à la limite de
    511 fichiers), tests (`npx vitest run`), build, publication de l'artifact.

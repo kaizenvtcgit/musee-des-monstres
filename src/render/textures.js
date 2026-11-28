@@ -1,5 +1,6 @@
 // Every visual of the game is drawn here, in code, at boot.
 // Flat cartoon style: bright fills, thick dark outlines, big eyes.
+import { BUBBLE_KEYS, drawBubble } from './bubbles.js';
 
 const OUTLINE = 0x2b2d42;
 
@@ -246,36 +247,8 @@ export function generateTextures(scene) {
     g.fillCircle(15, 20, 2);
   });
 
-  // mood bubbles (24 x 24)
-  // discreet dark disc with a small coloured sign (no cartoon outline)
-  const bubble = (key, draw) => tex(scene, key, 24, 24, (g) => {
-    g.fillStyle(0x12161a, 0.72);
-    g.fillCircle(12, 12, 9);
-    g.lineStyle(1, 0xffffff, 0.25);
-    g.strokeCircle(12, 12, 9);
-    draw(g);
-  });
-  bubble('bubble-happy', (g) => {
-    g.fillStyle(0xff006e);
-    g.fillCircle(9, 10, 3.2);
-    g.fillCircle(15, 10, 3.2);
-    g.fillTriangle(5.9, 11, 18.1, 11, 12, 18);
-  });
-  bubble('bubble-bored', (g) => {
-    g.fillStyle(0x6c757d);
-    for (const x of [7, 12, 17]) g.fillCircle(x, 12, 1.8);
-  });
-  bubble('bubble-hungry', (g) => {
-    g.fillStyle(0xf77f00);
-    g.fillCircle(12, 13, 5);
-    g.fillStyle(0x52b788);
-    g.fillEllipse(14, 7, 5, 3);
-  });
-  bubble('bubble-scared', (g) => {
-    g.fillStyle(0xe63946);
-    g.fillRect(10.5, 5, 3, 9);
-    g.fillCircle(12, 17, 1.8);
-  });
+  // mood bubbles (24 x 24, src/render/bubbles.js)
+  for (const key of BUBBLE_KEYS) if (!scene.textures.exists(key)) scene.textures.addCanvas(key, drawBubble(key, 24));
 }
 
 export function monsterTextureKey(monster) {

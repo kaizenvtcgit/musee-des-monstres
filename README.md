@@ -75,6 +75,7 @@ les visiteurs et les gardiens se déplacent là où le jeu 2D les place. Le jeu 
 ## Crédits
 
 - Décorations d'enclos : modèles 3D de [Poly Haven](https://polyhaven.com) (licence CC0).
+- Vue 3D (`src/assets/3d/props.glb.json`) : portail `large_iron_gate`, sapins `fir_sapling` et `pine_sapling_small`, banc `painted_wooden_bench`, lampadaire `street_lamp_01`, poubelle `metal_trash_can`, arbuste `shrub_03`, pot `potted_plant_02`, jardinière `planter_box_01`, de [Poly Haven](https://polyhaven.com) (licence CC0), allégés avec gltf-transform.
 - Sols : textures photo de [ambientCG](https://ambientcg.com) (licence CC0) — pelouse Grass004, allées PavingStones070, enclos Lava003, Tiles093, Ground068, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A.
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - `docs/` : document de conception et plan de construction.

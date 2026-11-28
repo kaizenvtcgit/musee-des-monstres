@@ -4,7 +4,7 @@
 //
 // play(type, { x, y }): (x, y) is a point of the world: the sound is softer when it is far from the
 // middle of the screen or when the camera is zoomed out, panned left / right, and not played at all when
-// far off screen. A few voices at most at once.
+// far off screen (in the 3D view: by its distance to the 3D camera, see `placer`). A few voices at most at once.
 
 const MUTE_KEY = 'musee-des-monstres:muted';
 const MAX_VOICES = 8;
@@ -58,8 +58,10 @@ export class Sounds {
     if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.55, this.ctx.currentTime, 0.05);
   }
 
-  // Loudness (0..1) and stereo position (-1..1) of a sound at world point (x, y).
+  // Loudness (0..1) and stereo position (-1..1) of a sound at world point (x, y) (2D screen pixels), or null
+  // when out of hearing. The 3D view (src/render3d/park3d.js) sets `placer` to hear from its own camera.
   place(x, y) {
+    if (this.placer) return this.placer(x, y);
     const cam = this.scene.cameras.main;
     const v = cam.worldView;
     const dx = (x - v.centerX) / (v.width / 2), dy = (y - v.centerY) / (v.height / 2);

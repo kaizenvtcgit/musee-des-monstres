@@ -170,6 +170,7 @@ export class MonsterFX {
 
   // Particle level for this ghost: 0 none, 0.5 half, 1 all.
   detail(s) {
+    if (this.scene.hidden3d) return 0; // the 2D view is hidden under the 3D one: no particles
     const cam = this.scene.cameras.main;
     if (cam.zoom < FAR_ZOOM) return 0;
     const v = cam.worldView;
