@@ -13,7 +13,7 @@ import { shelterSize } from '../sim/build.js';
 import { SHELTER_MODEL_SCALE } from '../render/shelterpath.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
-import { ENCLOSURE_DECOR } from '../config/decor.js';
+import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { drawBubble } from '../render/bubbles.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
@@ -72,8 +72,8 @@ const GARDEN = [
   { name: 'pottedPlant', height: 1.3 },
   { name: 'shrubClump', height: 1.2 },
   { name: 'streetLamp', height: 3.6 },
-  { name: 'parkBench', width: 1.7, facePath: true },
-  { name: 'flowerBox', width: 1.7, facePath: true },
+  { name: 'parkBench', height: 1.0, facePath: true }, // with its back (its model is short and deep)
+  { name: 'flowerBox', height: 1.0, facePath: true }, // with its flowers
   { name: 'mossRocks', decor: 'mossRocks' },
   { name: 'trashCan', height: 1.0, facePath: true },
 ];
@@ -586,7 +586,7 @@ vec2 flowUv(vec2 uv) {
         if (!ENCLOSURE_DECOR[d.type]) continue;
         // the variant, turned differently, picked from the tile (as the menu icons, render-decor.mjs: 0 or 140 degrees)
         const v = (d.tx * 7 + d.ty * 13) % 2;
-        add(d.type, { tx: d.tx, ty: d.ty, rot: v ? THREE.MathUtils.degToRad(140) : 0, y });
+        add(d.type, { tx: d.tx, ty: d.ty, rot: v ? THREE.MathUtils.degToRad(140) : 0, y, k: DECOR_SCALE[d.type] });
       }
       const sh = e.shelter;
       // centred on its n x n tiles (3, or 2 for an old one), its entrance toward +y (+z here): a model of

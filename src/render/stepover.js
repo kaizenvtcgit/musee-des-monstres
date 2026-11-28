@@ -1,8 +1,8 @@
 // Which enclosure decorations a monster walks over instead of going around them.
 import { ENCLOSURE_DECOR, DECOR_HEIGHT } from '../config/decor.js';
 
-// Height of each monster in metres, as drawn (measured on its animations).
-export const MONSTER_HEIGHT = { golem: 2.6, yeti: 2.2, dragonnet: 1.8, spectre: 1.5, kraken: 1.5 };
+// Height of each monster in metres, as drawn in the 3D view (src/render3d/park-scene.js, MONSTERS).
+export const MONSTER_HEIGHT = { golem: 3.4, yeti: 3.0, dragonnet: 2.2, spectre: 2.5, kraken: 2.4 };
 
 // A step over something up to about a third of its height (a knee); a floating ghost passes over all.
 const STEP = 0.35;

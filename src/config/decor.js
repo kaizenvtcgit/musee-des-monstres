@@ -52,17 +52,21 @@ export const ENCLOSURE_DECOR = {
   expeditionFlag: { id: 'expeditionFlag', habitat: 'summit', price: 150 },
 };
 
-// Height of each decoration in metres (measured on its render): a monster steps over the ones that are
-// low for its own size (see src/render/stepover.js) and walks around the others.
+// Size of a decoration in the 3D view (src/render3d/park-scene.js): its model is drawn at one tile per model
+// unit (2.5 m), times this factor for the few that came out of real size next to a visitor (1.75 m).
+export const DECOR_SCALE = { deadTree: 2, lantern: 0.5, sunkenChest: 0.6, tombstone: 0.85, frozenShrub: 0.7 };
+
+// Height of each decoration in metres, as drawn in the 3D view: a monster steps over the ones that are low
+// for its own size (see src/render/stepover.js) and walks around the others.
 export const DECOR_HEIGHT = {
-  lavaRock: 0.44, fumarole: 0.33, obsidian: 0.73, mossRocks: 0.38, reeds: 0.95, sunkenChest: 0.38,
-  gothicStatue: 1.05, lantern: 0.58, glowMushrooms: 0.5, mossStump: 0.28, fern: 0.33, deadTrunk: 0.35,
-  iceBlock: 0.6, snowyFir: 1.15, frostRock: 0.44, charredStump: 0.26, smokingRock: 0.49, emberPile: 0.26,
-  basaltColumns: 0.86, ochreRock: 0.44, stoneStack: 0.37, coral: 0.55, giantShell: 0.23, anemones: 0.35,
-  jellyfish: 0.46, whaleStatue: 0.81, vents: 0.46, rottenTrunk: 0.45, roots: 0.44, wisps: 0.76,
-  tombstone: 0.54, stoneCross: 0.68, deadTree: 1.2, brokenColumn: 0.85, horseStatue: 0.78, mossBlock: 0.47,
-  amethyst: 0.97, aquamarine: 0.58, stalagmites: 0.76, frozenShrub: 1.2, frozenStump: 0.27, cairn: 0.63,
-  snowRock: 0.72, iceSpikes: 0.79, expeditionFlag: 1.1,
+  lavaRock: 0.96, fumarole: 0.63, obsidian: 1.68, mossRocks: 0.62, reeds: 2.41, sunkenChest: 0.53,
+  gothicStatue: 2.49, lantern: 0.69, glowMushrooms: 0.88, mossStump: 0.58, fern: 0.43, deadTrunk: 0.23,
+  iceBlock: 1.45, snowyFir: 2.88, frostRock: 0.96, charredStump: 0.54, smokingRock: 0.87, emberPile: 0.32,
+  basaltColumns: 2.02, ochreRock: 0.78, stoneStack: 0.47, coral: 1.46, giantShell: 0.45, anemones: 0.76,
+  jellyfish: 0.88, whaleStatue: 1.67, vents: 1.49, rottenTrunk: 0.62, roots: 0.73, wisps: 1.49,
+  tombstone: 0.95, stoneCross: 1.62, deadTree: 5.74, brokenColumn: 1.75, horseStatue: 2.0, mossBlock: 1.0,
+  amethyst: 2.2, aquamarine: 1.5, stalagmites: 1.63, frozenShrub: 1.55, frozenStump: 0.51, cairn: 1.5,
+  snowRock: 1.41, iceSpikes: 1.8, expeditionFlag: 2.5,
 };
 
 // The shelter of each monster family (2 x 2 tiles), image src/assets/decor/shelter-<family>.png.
