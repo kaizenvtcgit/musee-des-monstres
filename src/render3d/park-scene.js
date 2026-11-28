@@ -522,7 +522,8 @@ vec2 flowUv(vec2 uv) {
       } else if (b.type === 'hatchery') {
         this.placeIncubator(group, cx, cz, b.id);
       } else if (b.type === 'expeditionBase') {
-        this.placeModel(group, 'expedition-base', cx, cz, 4.8, this.faceToPath(b), b.id);
+        // a military tent about 2.5 m tall (the model is very wide for its height: it overhangs its 2 x 2 tiles a little)
+        this.placeModel(group, 'expedition-base', cx, cz, 7, this.faceToPath(b), b.id);
       } else {
         // a garden decoration: one of several props, picked from the building id so it never changes
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
@@ -669,7 +670,8 @@ vec2 flowUv(vec2 uv) {
       if (this.buildGroup !== group) return; // rebuilt meanwhile
       const inc = m.scene.clone(true);
       const size = m.box.getSize(new THREE.Vector3());
-      const s = 4.4 / Math.max(size.x, size.z); // a little smaller than its 5 m square
+      // about 2.8 m across and 3 m tall: big enough for its five 80 cm eggs under the glass bell
+      const s = 2.8 / Math.max(size.x, size.z);
       inc.scale.setScalar(s);
       inc.position.set(cx, -m.box.min.y * s, cz);
       inc.userData.buildingId = id;
