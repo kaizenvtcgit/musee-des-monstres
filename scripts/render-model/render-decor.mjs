@@ -2,7 +2,7 @@
 // VARIANTS images per decoration, turned differently, so that several copies do not look identical.
 //
 // Usage: node scripts/render-model/render-decor.mjs
-// Needs the same setup as render.mjs (npm install, then Playwright with Chromium).
+// Needs npm install, then Playwright with Chromium (npx playwright install chromium).
 // Photo-scanned models come from Poly Haven (CC0, https://polyhaven.com): they are downloaded once into
 // models/decor/ (not stored in the repository).
 import { createRequire } from 'node:module';
@@ -82,6 +82,8 @@ const LOOKS = {
 };
 
 const wanted = Object.keys(ENCLOSURE_DECOR); // all of them: they share one image
+// --3d: export them (and the shelters) as one 3D file for the 3D view instead of rendering images
+const EXPORT_3D = process.argv.includes('--3d');
 for (const id of wanted) if (!LOOKS[id]) throw new Error(`No look for the decoration ${id}`);
 
 // download the Poly Haven models that are missing (glTF 1k: the .gltf, its .bin and textures)
@@ -118,6 +120,21 @@ await page.route('http://render.local/**', (route) => {
 });
 await page.goto('http://render.local/decor.html');
 await page.waitForFunction(() => window.ready, null, { timeout: 60000 });
+
+if (EXPORT_3D) {
+  for (const look of Object.values(SHELTER_LOOKS)) if (look.polyhaven) await download(look.polyhaven);
+  const model = (look) => (look.polyhaven ? `/models/${look.polyhaven}/${look.polyhaven}.gltf` : undefined);
+  const items = [
+    ...wanted.map((id) => ({ id, opts: { ...LOOKS[id], model: model(LOOKS[id]) } })),
+    ...Object.entries(SHELTER_LOOKS).map(([family, look]) => ({ id: `shelter-${family}`, opts: { ...look, model: model(look) } })),
+  ];
+  const b64 = await page.evaluate((it) => window.exportDecor(it), items);
+  const file = path.join(ROOT, 'models/decor-3d.glb');
+  writeFileSync(file, Buffer.from(b64, 'base64'));
+  console.log(`${file}: ${(b64.length * 0.75 / 1024 / 1024).toFixed(1)} MB (then: README, "Visite 3D")`);
+  await browser.close();
+  process.exit(0);
+}
 
 mkdirSync(OUT, { recursive: true });
 // one image for all: decoration i, variant v is cell i * VARIANTS + v (the order of ENCLOSURE_DECOR), ATLAS_COLS per row

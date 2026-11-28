@@ -4,7 +4,8 @@ import { BALANCE } from '../config/balance.js';
 import { SPECIES, LOCATIONS, HABITAT_FAMILIES, offeredHabitatsOfFamily } from '../config/species.js';
 import { ENCLOSURE_DECOR, decorForHabitat, SHELTERS } from '../config/decor.js';
 import { OBJECTIVES } from '../sim/objectives.js';
-import { resolveMonsterTexture, realKey, visitorLook } from './sprites.js';
+import { realKey } from './sprites.js';
+import { monsterTextureKey } from './textures.js';
 import { capacity, canBreed } from '../sim/breeding.js';
 import { eraseGame } from '../save/storage.js';
 
@@ -71,8 +72,14 @@ class UI {
     }
   }
 
+  // the 3D view (src/render3d/park3d.js), which shows the park
+  bindView3d(view) {
+    this.view3d = view;
+  }
+
   bindScene(scene) {
     this.scene = scene;
+    this.view3d?.setScene(scene);
     this.renderToolbar();
     // habitats grouped by the monster that lives there
     this.el('habitats').innerHTML = HABITAT_FAMILIES.map((f) => `<div class="group"><h4>${esc(this.familySpecies(f))}</h4>
@@ -83,28 +90,27 @@ class UI {
     if (this.resumed) this.toast(t('save.resumed'), 'good');
   }
 
-  // Portrait of a visitor: its 3D character if rendered, else the flat drawing.
+  // the 3D view (src/render3d/park3d.js), which shows the park and draws the portraits
+  // (portraits of the 3D models: monsters, visitors, keepers; a flat drawing until it is ready)
+  monsterImg(m) {
+    return this.view3d?.portrait({ kind: 'monster', id: m.id, speciesId: m.speciesId }) ?? this.img(monsterTextureKey(m));
+  }
+
   visitorImg(v) {
-    const look = visitorLook(v);
-    return this.img(look ? look.replace(/^person-visitor/, 'visitor-') : `visitor-${v.variant}`);
+    return this.view3d?.portrait({ kind: 'visitor', id: v.id }) ?? this.img(`visitor-${v.variant}`);
+  }
+
+  keeperImg(k) {
+    return this.view3d?.portrait({ kind: 'keeper', id: k.id }) ?? this.img('keeper');
+  }
+
+  // The game cannot be shown (no 3D in this browser): a message instead.
+  fatal(text) {
+    this.root.insertAdjacentHTML('beforeend', `<div class="card fatal">${esc(text)}</div>`);
   }
 
   img(rawKey) {
-    // the flat people drawings have a 3D version: first frame of the character standing
-    const person = rawKey === 'keeper' ? 'person-keeper' : rawKey.replace(/^visitor-(\d+)$/, 'person-visitor$1');
-    const sheet = `anim-${person}-idle-d0`;
-    if (person !== rawKey && this.scene.textures.exists(sheet)) {
-      if (!this.imgCache.has(sheet)) {
-        // crop the first frame around the character (frames are 128 px, the body is in the middle)
-        const f = this.scene.textures.getFrame(sheet, 0);
-        const c = document.createElement('canvas');
-        c.width = 56; c.height = 96;
-        c.getContext('2d').drawImage(f.source.image, f.cutX + 36, f.cutY + 16, 56, 96, 0, 0, 56, 96);
-        this.imgCache.set(sheet, c.toDataURL());
-      }
-      return this.imgCache.get(sheet);
-    }
-    const key = realKey(this.scene, rawKey); // prefer the realistic Blender render
+    const key = realKey(this.scene, rawKey); // prefer the icon (Blender render)
     if (!this.imgCache.has(key)) this.imgCache.set(key, this.scene.textures.getBase64(key));
     return this.imgCache.get(key);
   }
@@ -263,8 +269,8 @@ class UI {
     if (btn.dataset.speed !== undefined) this.world.setSpeed(Number(btn.dataset.speed));
     if (btn.dataset.ticket) this.world.setTicketPrice(this.world.ticketPrice + Number(btn.dataset.ticket));
     if (btn.dataset.mute !== undefined && this.scene?.sounds) this.scene.sounds.setMuted(!this.scene.sounds.muted);
-    // the 3D walk: its code (three.js, models) is only downloaded now
-    if (btn.dataset.visit !== undefined && this.scene) import('../render3d/visit.js').then((m) => m.startVisit(this.scene));
+    // walk <-> view from above
+    if (btn.dataset.visit !== undefined) this.view3d?.toggleWalk();
     if (btn.dataset.newgame !== undefined) {
       // first click asks for confirmation, a second click within a few seconds starts over
       if (performance.now() < this.confirmNewGameUntil) {
@@ -298,8 +304,9 @@ class UI {
     const confirming = performance.now() < this.confirmNewGameUntil;
     const saved = performance.now() - (this.savedAt ?? -1e9) < SAVED_BADGE_MS;
     const muted = this.scene?.sounds?.muted;
+    const walking = this.view3d?.mode === 'walk';
     return `<span class="saved ${saved ? 'show' : ''}" title="${esc(t('save.autosave'))}">✓ ${esc(t('save.saved'))}</span>
-      <button data-visit title="${esc(t('visit.button.help'))}">${esc(t('visit.button'))}</button>
+      <button data-visit title="${esc(t(walking ? 'view.top.help' : 'visit.button.help'))}">${esc(t(walking ? 'view.top' : 'visit.button'))}</button>
       <button data-mute title="${esc(t(muted ? 'sound.unmute' : 'sound.mute'))}">${muted ? '🔇' : '🔊'}</button>
       <button data-newgame class="${confirming ? 'danger' : ''}" title="${esc(t('save.newGameHelp'))}">${esc(t(confirming ? 'save.confirmNewGame' : 'save.newGame'))}</button>`;
   }
@@ -346,7 +353,7 @@ class UI {
         body = `<div class="row" style="color:var(--bad)">${esc(t('monster.escaped'))}</div>
           <button data-action="catch" data-id="${m.id}">${esc(t('monster.catch'))}</button>`;
       }
-      return `${close}<h3><img class="portrait" src="${this.img(resolveMonsterTexture(this.scene, m).key)}">${esc(this.monsterName(m))}</h3>
+      return `${close}<h3><img class="portrait" src="${this.monsterImg(m)}">${esc(this.monsterName(m))}</h3>
         <div class="row">${esc(t('monster.habitat', { h: this.habitatNames(SPECIES[m.speciesId].habitat) }))}</div>
         <div class="row">${esc(t('monster.happiness', { n: Math.round(m.happiness) }))}${bar(m.happiness)}</div>
         <div class="row">${esc(t('monster.hunger', { n: Math.round(m.hunger) }))}${bar(m.hunger, true)}</div>
@@ -362,6 +369,15 @@ class UI {
         <div class="row">${esc(t('visitor.satisfaction', { n: Math.round(v.satisfaction * 100) }))}${bar(v.satisfaction * 100)}</div>`;
     }
 
+    if (sel.kind === 'keeper') {
+      const k = w.keepers.find((x) => x.id === sel.id);
+      if (!k) return null;
+      const target = k.state === 'chasing' && w.monsters.get(k.targetMonsterId);
+      return `${close}<h3><img class="portrait" src="${this.keeperImg(k)}">${esc(t('keeper.title'))}</h3>
+        <div class="row">${esc(target ? t('keeper.chasing', { name: this.monsterName(target) }) : t('keeper.patrol'))}</div>
+        <div class="row">${esc(t('keeper.salary', { n: BALANCE.keeperSalaryPerMin }))}</div>`;
+    }
+
     if (sel.kind === 'enclosure') {
       const e = w.builder.enclosures.get(sel.id);
       if (!e) return null;
@@ -370,7 +386,7 @@ class UI {
       if (!e.monsterIds.length) return `${head}<div class="row">${esc(t('enclosure.empty'))}</div>${this.shelterRow(e)}${this.decorRow(e)}`;
       const max = capacity(e, e.speciesId);
       const list = e.monsterIds.map((id) => w.monsters.get(id)).filter(Boolean).map((m) => `
-        <button data-action="open" data-id="${m.id}"><img src="${this.img(resolveMonsterTexture(this.scene, m).key)}">
+        <button data-action="open" data-id="${m.id}"><img src="${this.monsterImg(m)}">
           <span>${esc(this.monsterName(m))} · ${Math.round(m.happiness)} %${m.state === 'escaped' ? ` · <span style="color:var(--bad)">${esc(t('monster.escapedShort'))}</span>` : ''}</span></button>`).join('');
       const pending = w.hatchery.eggs.filter((egg) => egg.parentEnclosureId === e.id).length;
       let nest;
@@ -404,7 +420,7 @@ class UI {
       const eggs = h.eggs.map((egg) => `<div class="row"><img src="${this.img('egg')}" height="20"> ${
         egg.ready ? esc(t('hatchery.eggReady')) : esc(t('hatchery.egg', { place: t(`location.${egg.locationId}`), s: Math.ceil(egg.remainingSec) }))}</div>`).join('');
       const stored = h.stored.map((m) => `
-        <button data-action="place" data-id="${m.id}"><img src="${this.img(resolveMonsterTexture(this.scene, m).key)}"><span>${esc(this.monsterName(m))} — ${esc(t('hatchery.place'))}</span></button>`).join('');
+        <button data-action="place" data-id="${m.id}"><img src="${this.monsterImg(m)}"><span>${esc(this.monsterName(m))} — ${esc(t('hatchery.place'))}</span></button>`).join('');
       return `${close}<h3><img class="portrait" src="${this.img('hatchery')}">${esc(t('building.hatchery'))}</h3>
         ${eggs || (h.stored.length ? '' : `<div class="row">${esc(t('hatchery.empty'))}</div>`)}
         <div class="row">${esc(t('hatchery.stored', { n: h.stored.length, max: BALANCE.hatcheryCapacity }))}</div>
@@ -483,9 +499,11 @@ class UI {
     this.toast(t(`error.${reason}`), 'error');
   }
 
-  hint(text) {
+  // `bad`: shown in red (a price the player cannot pay)
+  hint(text, bad = false) {
     const el = this.el('hint');
     el.style.display = text ? 'block' : 'none';
+    el.classList.toggle('bad', !!text && bad);
     if (text) el.textContent = text;
   }
 

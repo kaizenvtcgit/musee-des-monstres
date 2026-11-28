@@ -1,5 +1,5 @@
-// Every visual of the game is drawn here, in code, at boot.
-// Flat cartoon style: bright fills, thick dark outlines, big eyes.
+// Small pictures drawn in code at boot, for the menus: the icons and portraits used when there is no
+// Blender render or 3D portrait (yet), the egg. Flat cartoon style.
 
 const OUTLINE = 0x2b2d42;
 
@@ -150,16 +150,7 @@ function stall(g, awning, stripe) {
 }
 
 export function generateTextures(scene) {
-  // ground
-  tex(scene, 'tile-grass', 64, 32, (g) => {
-    diamond(g, 0x95d5b2, 0x40916c);
-  });
-  tex(scene, 'tile-grass2', 64, 32, (g) => {
-    diamond(g, 0x8fcfa9, 0x40916c);
-    g.fillStyle(0x74c69d);
-    g.fillTriangle(24, 14, 27, 8, 30, 14);
-    g.fillTriangle(36, 20, 39, 14, 42, 20);
-  });
+  // icons of the grounds (when there is no Blender render)
   tex(scene, 'tile-path', 64, 32, (g) => {
     diamond(g, 0xf2e2ba, 0xbc8a5f);
     g.fillStyle(0xe6ccb2);
@@ -174,16 +165,6 @@ export function generateTextures(scene) {
       g.fillEllipse(40, 20, 8, 3);
     });
   }
-  // soft ground shadow under monsters (64 x 24)
-  tex(scene, 'shadow', 64, 24, (g) => {
-    for (let i = 6; i >= 1; i--) {
-      g.fillStyle(0x000000, 0.06);
-      g.fillEllipse(32, 12, 10 * i, 4 * i);
-    }
-  });
-  tex(scene, 'tile-entrance', 64, 32, (g) => {
-    diamond(g, 0xffd166, 0xbc8a5f);
-  });
 
   // monsters
   for (const [id, palettes] of Object.entries(MONSTER_PALETTES)) {
@@ -246,36 +227,6 @@ export function generateTextures(scene) {
     g.fillCircle(15, 20, 2);
   });
 
-  // mood bubbles (24 x 24)
-  // discreet dark disc with a small coloured sign (no cartoon outline)
-  const bubble = (key, draw) => tex(scene, key, 24, 24, (g) => {
-    g.fillStyle(0x12161a, 0.72);
-    g.fillCircle(12, 12, 9);
-    g.lineStyle(1, 0xffffff, 0.25);
-    g.strokeCircle(12, 12, 9);
-    draw(g);
-  });
-  bubble('bubble-happy', (g) => {
-    g.fillStyle(0xff006e);
-    g.fillCircle(9, 10, 3.2);
-    g.fillCircle(15, 10, 3.2);
-    g.fillTriangle(5.9, 11, 18.1, 11, 12, 18);
-  });
-  bubble('bubble-bored', (g) => {
-    g.fillStyle(0x6c757d);
-    for (const x of [7, 12, 17]) g.fillCircle(x, 12, 1.8);
-  });
-  bubble('bubble-hungry', (g) => {
-    g.fillStyle(0xf77f00);
-    g.fillCircle(12, 13, 5);
-    g.fillStyle(0x52b788);
-    g.fillEllipse(14, 7, 5, 3);
-  });
-  bubble('bubble-scared', (g) => {
-    g.fillStyle(0xe63946);
-    g.fillRect(10.5, 5, 3, 9);
-    g.fillCircle(12, 17, 1.8);
-  });
 }
 
 export function monsterTextureKey(monster) {

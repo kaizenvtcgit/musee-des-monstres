@@ -9,6 +9,7 @@
 // isometric view, one still image per variant (driven by render-decor.mjs).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 // Output: W x H px; the centre of the tile, on the ground, at (W / 2, GROUND_Y). Shown at half size in the game.
 // A bigger object (a shelter on 2 x 2 tiles) is rendered on a bigger frame (opts.frame), at the same scale.
@@ -765,8 +766,8 @@ async function build(opts) {
     if (!m.isMesh) return;
     m.material = m.material.clone();
     if (opts.tint) m.material.color.multiply(new THREE.Color(opts.tint));
-    if (opts.lava) lavaGlow(m.material, opts.lava);
-    if (opts.snow) snowCap(m.material, opts.snow);
+    if (opts.lava) { lavaGlow(m.material, opts.lava); m.userData.lava = opts.lava; }
+    if (opts.snow) { snowCap(m.material, opts.snow); m.userData.snow = opts.snow; }
   });
   if (!opts.mouth && !opts.extra) return wrap;
   // a shelter: the dark mouth of the cave on its front (+Z), plus boulders around
@@ -777,6 +778,7 @@ async function build(opts) {
     const mouth = opening(w, h, inner);
     const front = (opts.dome ? opts.dome[0] : size.z * k) / 2;
     mouth.position.set(0, h * 0.4, front * 0.7);
+    mouth.userData.mouth = true; // the game puts it on the rock's face (it is drawn over everything here)
     out.add(mouth);
   }
   if (opts.extra) out.add(BUILT[opts.extra]());
@@ -871,6 +873,23 @@ window.packAtlas = async (urls, cols, format = 'image/webp', quality = 0.86) => 
   const g = c.getContext('2d');
   imgs.forEach((im, i) => g.drawImage(im, (i % cols) * W, Math.floor(i / cols) * H));
   return c.toDataURL(format, quality);
+};
+// Builds every decoration and shelter and exports them in one binary glTF (base64): one node per object,
+// named after it, in tile units (1 = one tile), resting on y = 0, its front toward +z. What the exporter
+// cannot carry (shader tweaks) is in each node's extras: lava / snow strength, waterline, glow, mouth.
+window.exportDecor = async (items) => {
+  const root = new THREE.Group();
+  for (const { id, opts } of items) {
+    const obj = await build(opts);
+    obj.name = id;
+    obj.userData = { waterline: opts.waterline ?? 0, glow: opts.glow ?? 0 };
+    root.add(obj);
+  }
+  const glb = await new GLTFExporter().parseAsync(root, { binary: true });
+  const bytes = new Uint8Array(glb);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 };
 window.ready = true;
 </script>
