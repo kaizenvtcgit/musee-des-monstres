@@ -369,6 +369,15 @@ class UI {
         <div class="row">${esc(t('visitor.satisfaction', { n: Math.round(v.satisfaction * 100) }))}${bar(v.satisfaction * 100)}</div>`;
     }
 
+    if (sel.kind === 'keeper') {
+      const k = w.keepers.find((x) => x.id === sel.id);
+      if (!k) return null;
+      const target = k.state === 'chasing' && w.monsters.get(k.targetMonsterId);
+      return `${close}<h3><img class="portrait" src="${this.img('keeper')}">${esc(t('keeper.title'))}</h3>
+        <div class="row">${esc(target ? t('keeper.chasing', { name: this.monsterName(target) }) : t('keeper.patrol'))}</div>
+        <div class="row">${esc(t('keeper.salary', { n: BALANCE.keeperSalaryPerMin }))}</div>`;
+    }
+
     if (sel.kind === 'enclosure') {
       const e = w.builder.enclosures.get(sel.id);
       if (!e) return null;

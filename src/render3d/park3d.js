@@ -4,7 +4,12 @@
 //
 // Controls from above: right button held = turn the view (freely), wheel = zoom, middle button held
 // (or left button with the selection tool) = move, Z Q S D / W A S D / arrows = move; on touch screens:
-// one finger = move, two fingers = zoom and turn. A button switches to the walk (src/render3d/visit.js).
+// one finger = move (or use the tool), two fingers = zoom and turn. A button switches to the walk
+// (src/render3d/visit.js).
+// The tools of the menus work here as in 2D: the tile under the pointer is found by a ray from the camera
+// to the ground and given to the hidden GameScene (toolDown / toolMove / toolUp), which runs them; its
+// preview tiles are drawn in 3D (green: possible, red: not). A click with the selection tool opens the
+// sheet of the monster, visitor, keeper or building under the pointer.
 import * as THREE from 'three';
 import { ParkScene, T, RING } from './park-scene.js';
 import { WalkMode } from './visit.js';
@@ -56,6 +61,8 @@ export class TopMode {
   exit() {
     for (const [target, type, fn, opt] of this.listeners) target.removeEventListener(type, fn, opt);
     this.pointers.clear();
+    this.park.scene?.toolCancel();
+    this.park.showGhost(null);
     this.view.canvas.style.cursor = '';
   }
 
@@ -99,6 +106,7 @@ export class TopMode {
   }
 
   update(dt) {
+    this.update3dTool();
     const k = this.keys;
     let f = 0, s = 0;
     if (k.has('KeyW') || k.has('ArrowUp')) f += 1;
@@ -128,6 +136,48 @@ export class TopMode {
     this.view.ui.setTool?.({ type: 'select' });
   }
 
+  // ---------------------------------------------------------------- tools
+
+  // the tool chosen in the menus (the hidden 2D scene holds it and runs it, tile by tile)
+  toolType() {
+    return this.park.scene?.tool?.type ?? 'select';
+  }
+
+  // Shows the placement preview of the tool on the tile under the pointer (and paints paths while
+  // `leftDown`); a tile is found by a ray from the camera to the ground, whatever the turn and zoom.
+  hover(e, leftDown = false) {
+    const sc = this.park.scene;
+    if (!sc || this.toolType() === 'select') return this.park.showGhost(null);
+    const { tile } = this.park.pick(e.clientX, e.clientY, this.camera);
+    this.park.showGhost(tile ? sc.toolMove(tile, leftDown) : null);
+  }
+
+  toolDown(e) {
+    const { tile } = this.park.pick(e.clientX, e.clientY, this.camera);
+    if (!tile) return false;
+    this.park.scene.toolDown(tile);
+    this.hover(e, false);
+    return true;
+  }
+
+  // a click (left button released without moving the view): use the tool, or select what is there
+  toolUp(e) {
+    const { tile, hit } = this.park.pick(e.clientX, e.clientY, this.camera);
+    if (!tile) return this.park.scene.toolCancel();
+    const cells = this.park.scene.toolUp(tile, null, hit);
+    this.park.showGhost(this.toolType() === 'select' ? null : cells);
+  }
+
+  update3dTool() {
+    // a new tool chosen in the menus: its preview at once where the mouse is (or none)
+    const tool = this.park.scene?.tool;
+    if (tool !== this.lastTool) {
+      this.lastTool = tool;
+      if (this.mouse && !this.pointers.size) this.hover(this.mouse);
+      else this.park.showGhost(null);
+    }
+  }
+
   // ---------------------------------------------------------------- input
 
   bindInput() {
@@ -137,27 +187,45 @@ export class TopMode {
       target.addEventListener(type, fn, opt);
       this.listeners.push([target, type, fn, opt]);
     };
+    const touches = () => [...this.pointers.values()].filter((q) => q.touch);
     on(c, 'contextmenu', (e) => e.preventDefault());
     on(c, 'wheel', (e) => {
       e.preventDefault();
       // pixels or lines; a notch of the wheel is about 100 px
       const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
       this.zoom(Math.pow(1.0015, THREE.MathUtils.clamp(d, -300, 300)));
+      this.hover(e);
     }, { passive: false });
     on(c, 'pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button === 1) e.preventDefault(); // no auto-scroll
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, button: e.button, touch: e.pointerType === 'touch' });
+      const touch = e.pointerType === 'touch';
+      const p = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, button: e.button, touch };
+      // a second finger: zoom and turn, the tool being used is let go
+      if (touch) {
+        for (const q of touches()) {
+          if (q.tool) { q.tool = false; this.park.scene?.toolCancel(); this.park.showGhost(null); }
+          q.moved = true;
+        }
+      }
+      this.pointers.set(e.pointerId, p);
       try { c.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
       if (e.button === 2) c.style.cursor = 'grabbing';
+      // the left button (or one finger) uses the tool; the right button only ever turns the view
+      if (e.button === 0 && this.park.scene && this.toolType() !== 'select' && (!touch || touches().length === 1)) p.tool = this.toolDown(e);
     });
     on(c, 'pointermove', (e) => {
+      if (e.pointerType === 'mouse') this.mouse = { clientX: e.clientX, clientY: e.clientY };
       const p = this.pointers.get(e.pointerId);
-      if (!p) return;
+      if (!p) {
+        if (e.pointerType === 'mouse') this.hover(e);
+        return;
+      }
       const dx = e.clientX - p.x, dy = e.clientY - p.y;
-      const touches = [...this.pointers.values()].filter((q) => q.touch);
-      if (p.touch && touches.length >= 2) {
+      if (Math.hypot(e.clientX - p.x0, e.clientY - p.y0) >= 6) p.moved = true;
+      const fingers = touches();
+      if (p.touch && fingers.length >= 2) {
         // two fingers: pinch to zoom, twist to turn
-        const [a, b] = touches;
+        const [a, b] = fingers;
         const before = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
         p.x = e.clientX; p.y = e.clientY;
         const after = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
@@ -168,13 +236,17 @@ export class TopMode {
         return;
       }
       p.x = e.clientX; p.y = e.clientY;
+      if (p.tool) {
+        this.hover(e, true);
+        return;
+      }
       if (p.touch || p.button === 1) {
         this.dragGround(dx, dy);
       } else if (p.button === 2) {
         this.rotate(dx, dy);
-      } else if (p.button === 0 && (this.view.ui.scene?.tool?.type ?? 'select') === 'select') {
+      } else if (p.button === 0) {
         // the left button moves the view once dragged a little (a plain click stays a click)
-        if (!p.dragging && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) < 6) return;
+        if (!p.moved) return;
         if (!p.dragging) {
           p.dragging = true;
           c.style.cursor = 'grabbing';
@@ -182,13 +254,26 @@ export class TopMode {
         }
         this.dragGround(dx, dy);
       }
+      if (e.pointerType === 'mouse') this.hover(e);
     });
-    const up = (e) => {
+    const up = (e, cancelled) => {
+      const p = this.pointers.get(e.pointerId);
       this.pointers.delete(e.pointerId);
       if (!this.pointers.size) c.style.cursor = '';
+      if (!p || !this.park.scene) return;
+      if (p.tool) {
+        if (cancelled) { this.park.scene.toolCancel(); this.park.showGhost(null); } else this.toolUp(e);
+      } else if (!cancelled && p.button === 0 && !p.moved && this.toolType() === 'select') {
+        this.toolUp(e); // a click on a monster, someone, a building, an enclosure
+      }
+      if (p.touch && !this.pointers.size) this.park.showGhost(null);
     };
-    on(c, 'pointerup', up);
-    on(c, 'pointercancel', up);
+    on(c, 'pointerup', (e) => up(e, false));
+    on(c, 'pointercancel', (e) => up(e, true));
+    on(c, 'pointerleave', () => {
+      this.mouse = null;
+      if (!this.pointers.size) this.park.showGhost(null);
+    });
   }
 }
 

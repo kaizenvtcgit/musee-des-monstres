@@ -437,16 +437,17 @@ export class ParkScene {
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
         // (the waffle stand's counter is on its +z side, the grill's on its +x side)
         const [model, front] = n % 2 ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
-        this.placeModel(group, model, cx, cz, 2.4, this.faceToPath(b) + front);
+        this.placeModel(group, model, cx, cz, 2.4, this.faceToPath(b) + front, b.id);
       } else if (b.type === 'souvenir') {
-        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 2.6, this.faceToPath(b));
+        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 2.6, this.faceToPath(b), b.id);
       } else if (b.type === 'hatchery') {
-        this.placeIncubator(group, cx, cz);
+        this.placeIncubator(group, cx, cz, b.id);
       } else if (b.type === 'expeditionBase') {
-        this.placeModel(group, 'expedition-base', cx, cz, 4.8, this.faceToPath(b));
+        this.placeModel(group, 'expedition-base', cx, cz, 4.8, this.faceToPath(b), b.id);
       } else {
         // a garden decoration: a round bush in flowers
-        add(new THREE.IcosahedronGeometry(0.9, 1), new THREE.MeshStandardMaterial({ color: 0x4f7d3a, roughness: 0.9, flatShading: true }), cx, 0.7, cz);
+        add(new THREE.IcosahedronGeometry(0.9, 1), new THREE.MeshStandardMaterial({ color: 0x4f7d3a, roughness: 0.9, flatShading: true }), cx, 0.7, cz)
+          .userData.buildingId = b.id;
       }
     }
     // the entrance gate
@@ -457,8 +458,8 @@ export class ParkScene {
   }
 
   // A building model on its tiles: `width` metres across (its widest side), turned by `rot` (radians),
-  // standing on the ground. Loaded in the background.
-  placeModel(group, name, cx, cz, width, rot = 0) {
+  // standing on the ground. Loaded in the background. `id`: the building's, for clicks.
+  placeModel(group, name, cx, cz, width, rot = 0, id = null) {
     this.model(name).then((m) => {
       if (this.buildGroup !== group) return; // rebuilt meanwhile
       const obj = m.scene.clone(true);
@@ -471,6 +472,7 @@ export class ParkScene {
       inner.add(obj);
       inner.position.set(cx, 0, cz);
       inner.rotation.y = rot;
+      inner.userData.buildingId = id;
       obj.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = o.receiveShadow = true;
@@ -499,7 +501,7 @@ export class ParkScene {
   }
 
   // The incubator (models/incubator.glb, 5 places for eggs: nodes EggSlot_01..05) on its 2 x 2 tiles.
-  placeIncubator(group, cx, cz) {
+  placeIncubator(group, cx, cz, id = null) {
     this.eggSlots = [];
     this.eggs3d = new Map();
     this.model('incubator').then((m) => {
@@ -509,6 +511,7 @@ export class ParkScene {
       const s = 4.4 / Math.max(size.x, size.z); // a little smaller than its 5 m square
       inc.scale.setScalar(s);
       inc.position.set(cx, -m.box.min.y * s, cz);
+      inc.userData.buildingId = id;
       inc.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = o.receiveShadow = true;
@@ -709,7 +712,7 @@ export class ParkScene {
         map.set(it.id, e);
         make(it).then((body) => {
           if (map.get(it.id) !== e) return;
-          Object.assign(e, body, { loading: false });
+          Object.assign(e, body, { loading: false, kind: it.kind, height: it.h });
           e.obj.position.set(it.x * T, 0, it.y * T);
           this.s3.add(e.obj);
         }).catch(() => { e.failed = true; }); // this model could not be loaded: nobody drawn
@@ -753,7 +756,7 @@ export class ParkScene {
       const inWater = e && HABITAT_FAMILY[e.habitat] === 'water';
       const y3 = (look.hover ?? 0) - (inWater && look.sink ? look.sink * look.height : 0);
       items.push({
-        id: m.id, x: p.x, y: p.y, y3, species: m.speciesId, walk: look.walk, idle: look.idle,
+        id: m.id, kind: 'monster', h: look.height, x: p.x, y: p.y, y3, species: m.speciesId, walk: look.walk, idle: look.idle,
         visible: (entry?.hideK ?? 1) > 0.3,
       });
     }
@@ -767,13 +770,96 @@ export class ParkScene {
     for (const v of this.world.visitors) {
       if (v.state === 'gone' || !v.pos || !near(v.pos.x, v.pos.y)) continue;
       const k = [...v.id].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
-      items.push({ id: v.id, x: v.pos.x, y: v.pos.y, model: VISITOR_MODELS[k % VISITOR_MODELS.length], walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04 });
+      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, model: VISITOR_MODELS[k % VISITOR_MODELS.length], walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04 });
     }
     for (const kp of this.world.keepers) {
       if (!kp.pos || !near(kp.pos.x, kp.pos.y)) continue;
-      items.push({ id: kp.id, x: kp.pos.x, y: kp.pos.y, model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8 });
+      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8 });
     }
     this.sync(this.people, items, (it) => this.spawn(it.model, it.h), dt);
+  }
+
+  // ---------------------------------------------------------------- picking
+
+  // What is under a point of the screen (client pixels), seen by `camera`:
+  // { tile: { tx, ty } (where the ray meets the ground) | null, hit: { entity: { id, kind } | null, buildingId | null } }
+  pick(clientX, clientY, camera) {
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    const ray = (this.raycaster ??= new THREE.Raycaster());
+    ray.setFromCamera(ndc, camera);
+    const ground = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    const tile = ground ? { tx: Math.round(ground.x / T), ty: Math.round(ground.z / T) } : null;
+    return { tile, hit: { entity: this.pickEntity(clientX - r.left, clientY - r.top, r, camera), buildingId: this.pickBuilding(ray) } };
+  }
+
+  // The monster or person drawn under the point (px, py inside the canvas): each body counts as the
+  // screen segment from its feet to its head, a little thick; monsters first, then the nearest one.
+  pickEntity(px, py, r, camera) {
+    const toScreen = (v) => {
+      v.project(camera);
+      return { x: (v.x + 1) / 2 * r.width, y: (1 - v.y) / 2 * r.height, z: v.z };
+    };
+    let best = null;
+    for (const map of [this.monsters, this.people]) {
+      for (const [id, e] of map) {
+        if (!e.obj || !e.obj.visible || !e.kind) continue;
+        const h = e.height ?? 1.7;
+        const p = e.obj.position;
+        const a = toScreen(new THREE.Vector3(p.x, p.y, p.z)), b = toScreen(new THREE.Vector3(p.x, p.y + h, p.z));
+        if (a.z > 1 || b.z > 1) continue; // behind the camera
+        // thickness: about 40 % of the height on screen, at least 8 px
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        const side = toScreen(new THREE.Vector3(p.x, p.y + h / 2, p.z).add(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(h * 0.25)));
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const rad = Math.max(8, Math.hypot(side.x - mid.x, side.y - mid.y));
+        const t = len ? Math.max(0, Math.min(1, ((px - a.x) * (b.x - a.x) + (py - a.y) * (b.y - a.y)) / (len * len))) : 0;
+        const d = Math.hypot(px - (a.x + t * (b.x - a.x)), py - (a.y + t * (b.y - a.y)));
+        if (d > rad) continue;
+        const depth = camera.position.distanceTo(p), rank = e.kind === 'monster' ? 0 : 1;
+        if (!best || rank < best.rank || (rank === best.rank && depth < best.depth)) best = { id, kind: e.kind, depth, rank };
+      }
+    }
+    return best ? { id: best.id, kind: best.kind } : null;
+  }
+
+  // The building whose model the ray meets first
+  pickBuilding(ray) {
+    if (!this.buildGroup) return null;
+    for (const h of ray.intersectObject(this.buildGroup, true)) {
+      for (let o = h.object; o && o !== this.buildGroup; o = o.parent) {
+        if (o.userData.buildingId) return o.userData.buildingId;
+      }
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- placement preview
+
+  // Coloured squares on the tiles of the preview: [{ tx, ty, ok }], green where possible, red if not.
+  showGhost(cells) {
+    const n = cells?.length ?? 0;
+    if (!this.ghost || this.ghost.instanceMatrix.count < n) {
+      if (this.ghost) {
+        this.s3.remove(this.ghost);
+        this.ghost.dispose();
+      }
+      const geo = this.ghostGeo ??= new THREE.PlaneGeometry(T * 0.94, T * 0.94).rotateX(-Math.PI / 2);
+      const mat = this.ghostMat ??= new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.5, depthWrite: false, fog: false });
+      this.ghost = new THREE.InstancedMesh(geo, mat, Math.max(64, n * 2));
+      this.ghost.frustumCulled = false;
+      this.ghost.renderOrder = 4;
+      this.s3.add(this.ghost);
+    }
+    const m4 = new THREE.Matrix4(), good = new THREE.Color(0x52b788), bad = new THREE.Color(0xe63946);
+    for (let i = 0; i < n; i++) {
+      const { tx, ty, ok } = cells[i];
+      this.ghost.setMatrixAt(i, m4.makeTranslation(tx * T, 0.06, ty * T));
+      this.ghost.setColorAt(i, ok ? good : bad);
+    }
+    this.ghost.count = n;
+    this.ghost.instanceMatrix.needsUpdate = true;
+    if (this.ghost.instanceColor) this.ghost.instanceColor.needsUpdate = true;
   }
 
   // ---------------------------------------------------------------- loop

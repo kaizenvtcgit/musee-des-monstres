@@ -817,12 +817,7 @@ export class GameScene extends Phaser.Scene {
       this.downAt = { x: pointer.x, y: pointer.y };
       this.panning = false;
       if (!pointer.leftButtonDown()) return;
-      const tile = this.pointerTile(pointer);
-      if (this.tool.type === 'enclosure') this.dragStart = tile;
-      if (this.tool.type === 'path') {
-        this.lastPainted = null;
-        this.paintPath(tile);
-      }
+      this.toolDown(this.pointerTile(pointer));
     });
 
     this.input.on('pointermove', (pointer) => {
@@ -837,9 +832,7 @@ export class GameScene extends Phaser.Scene {
         cam.scrollY -= (pointer.y - pointer.prevPosition.y) / cam.zoom;
         return;
       }
-      const tile = this.pointerTile(pointer);
-      if (this.tool.type === 'path' && pointer.leftButtonDown()) this.paintPath(tile);
-      this.drawGhost(tile);
+      this.toolMove(this.pointerTile(pointer), pointer.leftButtonDown());
     });
 
     this.input.on('pointerup', (pointer) => {
@@ -849,8 +842,38 @@ export class GameScene extends Phaser.Scene {
         this.panning = false;
         return;
       }
-      this.handleClick(tile, pointer);
+      this.toolUp(tile, pointer);
     });
+  }
+
+  // ---- tools, by tile ---------------------------------------------------
+  // Used by the 2D input above and by the 3D view (src/render3d/park3d.js), which finds the tile itself.
+  // toolMove and toolUp return the tiles of the placement preview: [{ tx, ty, ok }].
+
+  // left button pressed on a tile
+  toolDown(tile) {
+    if (this.tool.type === 'enclosure') this.dragStart = tile;
+    if (this.tool.type === 'path') {
+      this.lastPainted = null;
+      this.paintPath(tile);
+    }
+  }
+
+  // pointer over a tile (`leftDown`: the left button is held)
+  toolMove(tile, leftDown) {
+    if (this.tool.type === 'path' && leftDown) this.paintPath(tile);
+    return this.drawGhost(tile);
+  }
+
+  // the tool's drag was let go (no click): forget its start
+  toolCancel() {
+    this.dragStart = null;
+    this.lastPainted = null;
+  }
+
+  // left button released (a click); `hit`: what the 3D view found under the pointer (see selectAt)
+  toolUp(tile, pointer, hit) {
+    return this.handleClick(tile, pointer, hit);
   }
 
   pointerTile(pointer) {
@@ -884,7 +907,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  handleClick(tile, pointer) {
+  handleClick(tile, pointer, hit) {
     const { world } = this;
     const b = world.builder;
     this.lastPainted = null;
@@ -922,24 +945,36 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case 'select':
-        this.selectAt(tile, pointer);
+        this.selectAt(tile, pointer, hit);
         break;
       default:
         break;
     }
-    this.drawGhost(tile);
+    return this.drawGhost(tile);
   }
 
-  selectAt(tile, pointer) {
-    const { world } = this;
+  // What the 2D sprites under the pointer are: { entity: { id, kind } | null, buildingId: id | null }.
+  spriteHit(pointer) {
     const p = pointer.positionToCamera(this.cameras.main);
-    // sprites first (escaped monsters are clickable to catch them)
     let best = null;
     for (const [id, e] of this.entitySprites) {
       if (!e.sprite.getBounds().contains(p.x, p.y)) continue;
       if (!best || e.sprite.depth > best.e.sprite.depth || (e.kind === 'monster' && best.e.kind !== 'monster')) best = { id, e };
     }
-    if (best && best.e.kind === 'monster') {
+    // building sprites are taller than their tiles: test their image bounds too
+    let bestB = null;
+    for (const [id, s] of this.buildingSprites) {
+      if (s.getBounds().contains(p.x, p.y) && (!bestB || s.depth > bestB.s.depth)) bestB = { id, s };
+    }
+    return { entity: best ? { id: best.id, kind: best.e.kind } : null, buildingId: bestB?.id ?? null };
+  }
+
+  // `hit`: what is under the pointer (see spriteHit; the 3D view gives its own)
+  selectAt(tile, pointer, hit = this.spriteHit(pointer)) {
+    const { world } = this;
+    // people and monsters first (escaped monsters are clickable to catch them)
+    const best = hit.entity;
+    if (best && best.kind === 'monster') {
       const m = world.monsters.get(best.id);
       if (m && m.state === 'escaped') {
         world.catchMonster(m.id);
@@ -949,17 +984,12 @@ export class GameScene extends Phaser.Scene {
       this.ui.select({ kind: 'monster', id: best.id });
       return;
     }
-    if (best && best.e.kind === 'visitor') {
-      this.ui.select({ kind: 'visitor', id: best.id });
+    if (best && (best.kind === 'visitor' || best.kind === 'keeper')) {
+      this.ui.select({ kind: best.kind, id: best.id });
       return;
     }
-    // building sprites are taller than their tiles: test their image bounds too
-    let bestB = null;
-    for (const [id, s] of this.buildingSprites) {
-      if (s.getBounds().contains(p.x, p.y) && (!bestB || s.depth > bestB.s.depth)) bestB = { id, s };
-    }
-    if (bestB) {
-      const bld = world.builder.buildings.get(bestB.id);
+    if (hit.buildingId) {
+      const bld = world.builder.buildings.get(hit.buildingId);
       if (bld) {
         this.ui.select({ kind: 'building', id: bld.id, type: bld.type });
         return;
@@ -979,18 +1009,27 @@ export class GameScene extends Phaser.Scene {
     if (bld) this.ui.select({ kind: 'building', id: bld.id, type: bld.type });
   }
 
+  // Draws the placement preview of the tool on the pointed tile; returns its tiles, [{ tx, ty, ok }].
   drawGhost(tile) {
     const g = this.ghost;
     g.clear();
-    const { grid } = this.world;
-    const type = this.tool.type;
-    if (type === 'select') return;
-    const diamondAt = (tx, ty, ok) => {
+    const cells = this.ghostCells(tile);
+    for (const { tx, ty, ok } of cells) {
       const c = tileToScreen(tx, ty);
       const pts = [{ x: c.x, y: c.y - 16 }, { x: c.x + 32, y: c.y }, { x: c.x, y: c.y + 16 }, { x: c.x - 32, y: c.y }];
       g.fillStyle(ok ? 0x52b788 : 0xe63946, 0.45);
       g.fillPoints(pts, true);
-    };
+    }
+    return cells;
+  }
+
+  // The tiles of the placement preview (green `ok`: the tool can be used there), same rules for 2D and 3D.
+  ghostCells(tile) {
+    const cells = [];
+    const { grid } = this.world;
+    const type = this.tool.type;
+    if (type === 'select') return cells;
+    const diamondAt = (tx, ty, ok) => cells.push({ tx, ty, ok });
     if (type === 'enclosure' && this.dragStart) {
       const x0 = Math.min(this.dragStart.tx, tile.tx), x1 = Math.max(this.dragStart.tx, tile.tx);
       const y0 = Math.min(this.dragStart.ty, tile.ty), y1 = Math.max(this.dragStart.ty, tile.ty);
@@ -998,14 +1037,13 @@ export class GameScene extends Phaser.Scene {
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!grid.isFree(x, y)) ok = false;
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (grid.inBounds(x, y)) diamondAt(x, y, ok);
       this.ui.hint(`${(x1 - x0 + 1)} × ${(y1 - y0 + 1)}`);
-      return;
+      return cells;
     }
-    if (!grid.inBounds(tile.tx, tile.ty)) return;
+    if (!grid.inBounds(tile.tx, tile.ty)) return cells;
     if (type === 'demolish') {
       const t = grid.getTile(tile.tx, tile.ty);
-      diamondAt(tile.tx, tile.ty, false);
-      if (!t.occupant && t.ground !== 'path') g.clear();
-      return;
+      if (t.occupant || t.ground === 'path') diamondAt(tile.tx, tile.ty, false);
+      return cells;
     }
     if (type === 'shelter') {
       // its 2 x 2 tiles from the pointed one
@@ -1016,13 +1054,13 @@ export class GameScene extends Phaser.Scene {
       for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
         if (grid.inBounds(tile.tx + dx, tile.ty + dy)) diamondAt(tile.tx + dx, tile.ty + dy, ok);
       }
-      return;
+      return cells;
     }
     if (type === 'decor') {
       const t = grid.getTile(tile.tx, tile.ty);
       const enc = t.occupant && this.world.builder.enclosures.get(t.occupant);
       diamondAt(tile.tx, tile.ty, !!enc && enc.habitat === this.tool.habitat && !this.world.builder.decorAt(tile.tx, tile.ty));
-      return;
+      return cells;
     }
     if (type === 'placeMonster') {
       const t = grid.getTile(tile.tx, tile.ty);
@@ -1032,8 +1070,9 @@ export class GameScene extends Phaser.Scene {
         && (enc.monsterIds.length === 0 || enc.speciesId === sp)
         && enc.monsterIds.length < capacity(enc, sp);
       diamondAt(tile.tx, tile.ty, ok);
-      return;
+      return cells;
     }
     diamondAt(tile.tx, tile.ty, grid.isFree(tile.tx, tile.ty));
+    return cells;
   }
 }

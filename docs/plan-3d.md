@@ -44,7 +44,9 @@ La « Visite 3D » à pied (déjà faite) devient un simple mode de caméra.
 1. ✅ **Vue principale 3D** (fait : `park-scene.js` = scène commune, `park3d.js` = vue du dessus + bascule,
    `visit.js` = mode marche ; `?2d` dans l'adresse garde l'ancienne vue 2D pour les vérifications) : park3d.js, caméra orbitale (clic droit libre, molette, déplacement), Phaser caché,
    reconstruction de la scène quand le parc change (enclos / allées / bâtiments ajoutés ou démolis), bouton marche à pied.
-2. **Outils et sélection** : picking, fantômes 3D, tous les outils (allées, enclos, bâtiments, démolition), clic sur
+2. ✅ **Outils et sélection** (fait : GameScene expose `toolDown` / `toolMove` / `toolUp` / `toolCancel` par case,
+   `drawGhost` renvoie ses cases via `ghostCells`, `selectAt(tile, pointer, hit)` accepte ce que la 3D a touché ;
+   `ParkScene.pick` = rayon → sol + monstre / personne / bâtiment, `showGhost` = cases colorées ; fiche « Gardien » ajoutée) : picking, fantômes 3D, tous les outils (allées, enclos, bâtiments, démolition), clic sur
    monstre / visiteur / bâtiment pour ouvrir sa fiche.
 3. **Décors, abris, comportements, bulles, sons** ; remplacer le portail d'entrée (blocs blancs), la décoration
    de jardin (boule verte) et les arbres par des modèles (Poly Haven CC0 ou modèles fournis par l'utilisateur).
