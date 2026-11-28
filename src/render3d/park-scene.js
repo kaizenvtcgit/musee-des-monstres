@@ -523,7 +523,8 @@ vec2 flowUv(vec2 uv) {
         this.placeIncubator(group, cx, cz, b.id);
       } else if (b.type === 'expeditionBase') {
         // a military tent about 3 m tall on its 3 x 3 tiles (the model is very wide for its height: it overhangs them a little)
-        this.placeModel(group, 'expedition-base', cx, cz, (b.x1 - b.x0 + 1) * T * 1.13, this.faceToPath(b), b.id);
+        // furnished inside (seen through its door and windows): models/blender/musee-decors.blend, scene TentInterior
+        this.placeModel(group, 'expedition-base', cx, cz, (b.x1 - b.x0 + 1) * T * 1.13, this.faceToPath(b), b.id, 'expedition-interior');
       } else {
         // a garden decoration: one of several props, picked from the building id so it never changes
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
@@ -621,7 +622,8 @@ vec2 flowUv(vec2 uv) {
 
   // A building model on its tiles: `width` metres across (its widest side), turned by `rot` (radians),
   // standing on the ground. Loaded in the background. `id`: the building's, for clicks.
-  placeModel(group, name, cx, cz, width, rot = 0, id = null) {
+  // `inside`: a model of what is inside it, made in the same frame as it (the tent's furnishings), placed with it.
+  placeModel(group, name, cx, cz, width, rot = 0, id = null, inside = null) {
     this.model(name).then((m) => {
       if (this.buildGroup !== group) return; // rebuilt meanwhile
       const obj = m.scene.clone(true);
@@ -641,6 +643,15 @@ vec2 flowUv(vec2 uv) {
         o.frustumCulled = true;
       });
       group.add(inner);
+      if (inside) {
+        this.model(inside).then((mi) => {
+          const io = mi.scene.clone(true);
+          io.scale.setScalar(s);
+          io.position.copy(obj.position);
+          io.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+          inner.add(io);
+        }).catch((err) => console.error(err));
+      }
     }).catch((err) => console.error(err));
   }
 

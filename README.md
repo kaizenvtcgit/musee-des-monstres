@@ -111,6 +111,9 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   (`models/blender/musee-decors.blend`, scène `MuseeShelters`) pour 3 × 3 cases, leurs matières précalculées en
   textures (couleur, relief, lueur), avec une vraie grotte creusée où le monstre entre. Le jeu les met à l'échelle
   de leur monstre (`SHELTER_MODEL_SCALE`, `src/render/shelterpath.js`).
+- `expedition-interior.glb.json` : l'aménagement de la tente d'expédition (plancher, table, lits de camp,
+  caisses, œuf dans la paille, lampe), fait dans Blender (scène `TentInterior`) dans le repère du modèle de la tente,
+  placé avec elle (`placeModel`, paramètre `inside`).
 - `src/assets/3d/tex/` : textures de sol et de mur (ambientCG, CC0) en 512 px.
 - Les personnes ne sont pas dans `models/` (trop lourdes) : les originaux sont les dossiers glTF « Individual
   Characters » des packs [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html)
