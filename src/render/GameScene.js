@@ -11,6 +11,7 @@ import { shelterSpots, stepShelterVisit, shelterRadius } from './shelterpath.js'
 import { canStepOver } from './stepover.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 import { t as tr } from '../i18n/index.js';
+import { faceToPath } from '../sim/facing.js';
 import { BALANCE } from '../config/balance.js';
 import { Sounds } from './sound.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
@@ -413,15 +414,15 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case 'decor':
-        this.report(b.placeDecor(tile.tx, tile.ty, this.tool.decor));
+        this.report(b.placeDecor(tile.tx, tile.ty, this.tool.decor, this.tool.rot));
         break;
       case 'shelter':
-        this.report(b.placeShelter(tile.tx, tile.ty));
+        this.report(b.placeShelter(tile.tx, tile.ty, this.tool.rot ?? 0));
         break;
       case 'decoration':
       case 'snack':
       case 'souvenir':
-        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty, { variant: this.tool.variant }));
+        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty, { variant: this.tool.variant, rot: this.placeTurns(tile) }));
         break;
       case 'demolish':
         this.report(b.demolish(tile.tx, tile.ty));
@@ -488,13 +489,44 @@ export class GameScene extends Phaser.Scene {
     if (bld) this.ui.select({ kind: 'building', id: bld.id, type: bld.type });
   }
 
+  // ---- orientation of what is placed (src/sim/facing.js): R or the "Tourner" button turns it a quarter turn
+
+  // Tools whose thing can be turned.
+  static ROTATABLE = new Set(['snack', 'souvenir', 'decoration', 'decor', 'shelter']);
+
+  // The turn it will be placed with on this tile: the one chosen, else as it comes (a stand faces the path,
+  // a shelter's mouth +y; a decoration has none: null, as it comes).
+  placeTurns(tile) {
+    if (this.tool.rot != null) return this.tool.rot;
+    if (this.tool.type === 'snack' || this.tool.type === 'souvenir') return tile ? faceToPath(this.world.grid, tile.tx, tile.ty, tile.tx, tile.ty) : 0;
+    if (this.tool.type === 'shelter') return 0;
+    return null;
+  }
+
+  // The turn after a quarter turn more (from the one it would have on the last pointed tile).
+  nextTurns() {
+    return ((this.placeTurns(this.lastTile) ?? 0) + 1) % 4;
+  }
+
   // The price of the path or enclosure being dragged, in the hint (red when too expensive).
   showCost(text, cost) {
     this.ui.hint(text, !this.world.wallet.canAfford(cost));
   }
 
-  // The tiles of the placement preview (green `ok`: the tool can be used there), drawn by the 3D view.
+  // The tiles of the placement preview (green `ok`: the tool can be used there), drawn by the 3D view;
+  // `cells.arrow`: where the thing will face ({ x, y, q, size }: centre in tiles, quarter turns, tiles across).
   ghostCells(tile) {
+    this.lastTile = tile;
+    const cells = this.ghostTiles(tile);
+    if (GameScene.ROTATABLE.has(this.tool.type) && this.world.grid.inBounds(tile.tx, tile.ty)) {
+      const q = this.placeTurns(tile);
+      const n = this.tool.type === 'shelter' ? BALANCE.shelterSize : 1;
+      if (q != null) cells.arrow = { x: tile.tx + (n - 1) / 2, y: tile.ty + (n - 1) / 2, q, size: n };
+    }
+    return cells;
+  }
+
+  ghostTiles(tile) {
     const cells = [];
     const { grid } = this.world;
     const type = this.tool.type;

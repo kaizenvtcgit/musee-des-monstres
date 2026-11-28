@@ -2,6 +2,7 @@ import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { rectsOf, containsTile, tilesOf, fitBox } from './enclosure.js';
+import { turns } from './facing.js';
 
 const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
@@ -109,7 +110,8 @@ export class Builder {
   }
 
   // A decoration (src/config/decor.js) on a tile inside an enclosure of its habitat, one per tile.
-  placeDecor(tx, ty, type) {
+  // `rot`: which way it faces (quarter turns, src/sim/facing.js); none: as it comes.
+  placeDecor(tx, ty, type, rot = null) {
     const def = ENCLOSURE_DECOR[type];
     const tile = this.grid.getTile(tx, ty);
     if (!def || !tile) return fail('outOfBounds');
@@ -120,14 +122,16 @@ export class Builder {
     if (e.decor.some((d) => d.tx === tx && d.ty === ty) || this.shelterAt(tx, ty)) return fail('occupied');
     if (!this.wallet.spend(def.price)) return fail('noMoney');
     const id = `dec${this.nextId++}`;
-    e.decor.push({ id, type, tx, ty, price: def.price });
+    const d = { id, type, tx, ty, price: def.price };
+    if (rot != null) d.rot = turns(rot);
+    e.decor.push(d);
     this.grid.version++; // redraw
     return { ok: true, id, enclosureId: e.id };
   }
 
   // A shelter (cave, mausoleum... see SHELTERS) on size x size tiles of an enclosure, from (tx, ty);
-  // one per enclosure. Its entrance faces +y (down-left on screen).
-  placeShelter(tx, ty) {
+  // one per enclosure. Its entrance faces +y, turned by `rot` quarter turns (src/sim/facing.js).
+  placeShelter(tx, ty, rot = 0) {
     const n = BALANCE.shelterSize;
     const tile = this.grid.getTile(tx, ty);
     if (!tile) return fail('outOfBounds');
@@ -139,7 +143,7 @@ export class Builder {
     for (let dx = 0; dx < n; dx++) for (let dy = 0; dy < n; dy++) if (!containsTile(e, tx + dx, ty + dy)) return fail('shelterOutside');
     for (const d of e.decor ?? []) if (d.tx >= tx && d.tx < tx + n && d.ty >= ty && d.ty < ty + n) return fail('occupied');
     if (!this.wallet.spend(BALANCE.shelterCost)) return fail('noMoney');
-    e.shelter = { id: `she${this.nextId++}`, family: HABITAT_FAMILY[e.habitat], tx, ty, size: n, price: BALANCE.shelterCost, occupant: null };
+    e.shelter = { id: `she${this.nextId++}`, family: HABITAT_FAMILY[e.habitat], tx, ty, size: n, rot: turns(rot ?? 0), price: BALANCE.shelterCost, occupant: null };
     this.grid.version++; // redraw
     return { ok: true, id: e.shelter.id, enclosureId: e.id };
   }
@@ -172,6 +176,7 @@ export class Builder {
     const id = `${type}${this.nextId++}`;
     const b = { id, type, x0: tx, y0: ty, x1, y1, price, fixed: !!opts.fixed };
     if (opts.variant) b.variant = opts.variant; // which snack stand (src/config/stands.js)
+    if (opts.rot != null) b.rot = turns(opts.rot); // which way it faces (src/sim/facing.js)
     this.buildings.set(id, b);
     this.#fillRect(tx, ty, x1, y1, id);
     return { ok: true, id };

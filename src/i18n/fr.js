@@ -54,6 +54,7 @@ export const fr = {
   'tool.enclosure': 'Enclos',
   'tool.decoration': 'Décoration',
   'tool.snack': 'Snack',
+  'tool.rotate': 'Tourner (R)',
   'tool.souvenir': 'Souvenirs',
   'tool.keeper': 'Gardien',
   'tool.demolish': 'Démolir',

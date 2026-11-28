@@ -61,6 +61,7 @@ class UI {
       <div id="stands" class="card"></div>
       <div id="toolbar" class="card"></div>
       <div id="hint" class="card" style="display:none"></div>
+      <button id="rotate" class="card" style="display:none" title="R">↻ ${esc(t('tool.rotate'))}</button>
       <div id="help" class="card">${esc(t('hud.help'))}</div>
       ${testMode ? `<div id="testbadge" class="card" title="${esc(t('test.help'))}">${esc(t('test.badge'))}</div>` : ''}`;
     this.el = (id) => this.root.querySelector(`#${id}`);
@@ -70,6 +71,7 @@ class UI {
     this.el('habitats').addEventListener('pointerdown', (e) => this.onHabitat(e));
     this.el('decors').addEventListener('pointerdown', (e) => this.onDecor(e));
     this.el('stands').addEventListener('pointerdown', (e) => this.onStand(e));
+    this.el('rotate').addEventListener('pointerdown', (e) => { e.stopPropagation(); this.rotateTool(); });
     for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'decors', 'stands', 'objectives']) {
       this.el(id).addEventListener('wheel', (e) => e.stopPropagation());
     }
@@ -152,7 +154,16 @@ class UI {
     if (tool.type === 'shelter') hint = t('shelter.hint', { name: t(`shelter.${SHELTERS[tool.family]}`), habitat: this.habitatNames(tool.family).toLowerCase() });
     if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
     if (tool.type === 'snack' && tool.variant) hint = t('stand.hint', { name: t(`stand.${tool.variant}`) });
+    // what is being placed can be turned (R or this button)
+    this.el('rotate').style.display = this.scene?.constructor.ROTATABLE?.has(tool.type) ? 'block' : 'none';
     this.hint(hint);
+  }
+
+  // A quarter turn more for what is being placed (R or the "Tourner" button); false when the tool turns nothing.
+  rotateTool() {
+    if (!this.scene?.constructor.ROTATABLE?.has(this.tool?.type)) return false;
+    this.setTool({ ...this.tool, rot: this.scene.nextTurns() });
+    return true;
   }
 
   onToolbar(e) {

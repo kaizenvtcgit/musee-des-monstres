@@ -15,6 +15,7 @@ import { HABITAT_FAMILY } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { standOf } from '../config/stands.js';
+import { faceToPath, quarterAngle } from '../sim/facing.js';
 import { drawBubble } from '../render/bubbles.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
@@ -517,10 +518,10 @@ vec2 flowUv(vec2 uv) {
         const { model, front } = standOf(b);
         // a real kiosk next to the visitors: counter about waist high, the edge of its roof about 2.3 m up
         // (3.1 m across: it overhangs its tile a little)
-        this.placeModel(group, model, cx, cz, 3.1, this.faceToPath(b) + front, b.id);
+        this.placeModel(group, model, cx, cz, 3.1, this.facing(b) + front, b.id);
       } else if (b.type === 'souvenir') {
         // the same: the edge of its roof about 2.4 m up, its dragon on top about 3.8 m
-        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 3.25, this.faceToPath(b), b.id);
+        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 3.25, this.facing(b), b.id);
       } else if (b.type === 'hatchery') {
         this.placeIncubator(group, cx, cz, b.id);
       } else if (b.type === 'expeditionBase') {
@@ -531,7 +532,7 @@ vec2 flowUv(vec2 uv) {
         // a garden decoration: one of several props, picked from the building id so it never changes
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
         const v = GARDEN[n % GARDEN.length];
-        const rot = v.facePath ? this.faceToPath(b) : (n * 2.39996) % (Math.PI * 2);
+        const rot = b.rot != null ? quarterAngle(b.rot) : v.facePath ? this.faceToPath(b) : (n * 2.39996) % (Math.PI * 2);
         const g = garden.get(v.name) ?? garden.set(v.name, { v, items: [], ids: [] }).get(v.name);
         g.items.push({ cx, cz, rot });
         g.ids.push(b.id);
@@ -585,14 +586,16 @@ vec2 flowUv(vec2 uv) {
         if (!ENCLOSURE_DECOR[d.type]) continue;
         // the variant, turned differently, picked from the tile (as the menu icons, render-decor.mjs: 0 or 140 degrees)
         const v = (d.tx * 7 + d.ty * 13) % 2;
-        add(d.type, { tx: d.tx, ty: d.ty, rot: v ? THREE.MathUtils.degToRad(140) : 0, y, k: DECOR_SCALE[d.type] });
+        // (turned by the player when placed: d.rot)
+        const rot = d.rot != null ? quarterAngle(d.rot) : v ? THREE.MathUtils.degToRad(140) : 0;
+        add(d.type, { tx: d.tx, ty: d.ty, rot, y, k: DECOR_SCALE[d.type] });
       }
       const sh = e.shelter;
       // centred on its n x n tiles (3, or 2 for an old one), its entrance toward +y (+z here): a model of
       // shelters.glb (made for 3 x 3 tiles, models/blender/musee-decors.blend), scaled to its monster
       if (sh) {
         const n = shelterSize(sh);
-        shelters.push({ name: `shelter-${sh.family}`, tx: sh.tx + (n - 1) / 2, ty: sh.ty + (n - 1) / 2, y, k: (SHELTER_MODEL_SCALE[sh.family] ?? 0.55) * (n / 3) });
+        shelters.push({ name: `shelter-${sh.family}`, tx: sh.tx + (n - 1) / 2, ty: sh.ty + (n - 1) / 2, y, k: (SHELTER_MODEL_SCALE[sh.family] ?? 0.55) * (n / 3), rot: quarterAngle(sh.rot ?? 0) });
       }
     }
     if (shelters.length) {
@@ -605,6 +608,7 @@ vec2 flowUv(vec2 uv) {
           const obj = node.clone(true);
           obj.position.set(it.tx * T, it.y(0), it.ty * T);
           obj.scale.setScalar(T * it.k);
+          obj.rotation.y = it.rot;
           group.add(obj);
         }
       }).catch((err) => console.error(err));
@@ -659,20 +663,12 @@ vec2 flowUv(vec2 uv) {
 
   // The turn (radians) that points a building's front (+z of its model) toward a path next to it.
   faceToPath(b) {
-    const { grid } = this.world;
-    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
-    let best = null;
-    for (let y = b.y0 - 1; y <= b.y1 + 1; y++) {
-      for (let x = b.x0 - 1; x <= b.x1 + 1; x++) {
-        if (!grid.inBounds(x, y) || !grid.isPath(x, y)) continue;
-        const d = Math.hypot(x - cx, y - cy);
-        if (!best || d < best.d) best = { d, dx: x - cx, dy: y - cy };
-      }
-    }
-    if (!best) return 0;
-    // keep to the four sides
-    const ang = Math.atan2(best.dx, best.dy);
-    return Math.round(ang / (Math.PI / 2)) * (Math.PI / 2);
+    return quarterAngle(faceToPath(this.world.grid, b.x0, b.y0, b.x1, b.y1));
+  }
+
+  // The turn of a building: the one chosen when it was placed, else facing its path (older saved games).
+  facing(b) {
+    return b.rot != null ? quarterAngle(b.rot) : this.faceToPath(b);
   }
 
   // The incubator (models/incubator.glb, 5 places for eggs: nodes EggSlot_01..05) on its 2 x 2 tiles.
@@ -1174,6 +1170,25 @@ vec2 flowUv(vec2 uv) {
   // ---------------------------------------------------------------- placement preview
 
   // Coloured squares on the tiles of the preview: [{ tx, ty, ok }], green where possible, red if not.
+  // An arrow on the ground, from the centre of what is being placed toward its front (cells.arrow, GameScene).
+  showArrow(a) {
+    if (!this.arrow) {
+      const s = new THREE.Shape();
+      s.moveTo(-0.12, -0.35); s.lineTo(0.12, -0.35); s.lineTo(0.12, 0.05); s.lineTo(0.3, 0.05);
+      s.lineTo(0, 0.45); s.lineTo(-0.3, 0.05); s.lineTo(-0.12, 0.05); s.closePath();
+      const geo = new THREE.ShapeGeometry(s).rotateX(-Math.PI / 2); // pointing toward -z: turned below
+      geo.rotateY(Math.PI); // now toward +z (+y in tiles: a turn of 0)
+      this.arrow = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, fog: false }));
+      this.arrow.renderOrder = 5;
+      this.s3.add(this.arrow);
+    }
+    this.arrow.visible = !!a;
+    if (!a) return;
+    this.arrow.position.set(a.x * T, 0.09, a.y * T);
+    this.arrow.rotation.y = quarterAngle(a.q);
+    this.arrow.scale.setScalar(T * Math.max(1, a.size * 0.8));
+  }
+
   showGhost(cells) {
     const n = cells?.length ?? 0;
     if (!this.ghost || this.ghost.instanceMatrix.count < n) {
@@ -1195,6 +1210,7 @@ vec2 flowUv(vec2 uv) {
       this.ghost.setColorAt(i, ok ? good : bad);
     }
     this.ghost.count = n;
+    this.showArrow(cells?.arrow ?? null);
     this.ghost.instanceMatrix.needsUpdate = true;
     if (this.ghost.instanceColor) this.ghost.instanceColor.needsUpdate = true;
   }
