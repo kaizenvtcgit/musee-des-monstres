@@ -12,7 +12,7 @@ import { canStepOver } from './stepover.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 import { t as tr } from '../i18n/index.js';
 import { faceToPath } from '../sim/facing.js';
-import { traceToward, checkBridge } from '../sim/bridge.js';
+import { traceToward, checkBridge, pierTiles } from '../sim/bridge.js';
 import { BALANCE } from '../config/balance.js';
 import { Sounds } from './sound.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
@@ -30,6 +30,7 @@ const IDLE_ACTION_GAP = [4, 12];
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
 const MONSTER_RADIUS = { dragonnet: 0.6, kraken: 0.6, spectre: 0.4, golem: 0.45, yeti: 0.45 };
 const fmtCost = (n) => Math.round(n).toLocaleString('fr-FR');
+const PIER_RADIUS = 0.2; // tiles: a bridge pier is 0.55 m across, a tile 2.5 m
 
 // The hidden scene that runs the game (Phaser drives the frames): it ticks the World, decides what every
 // monster, visitor and keeper does and plays (a Phaser animation on an empty texture: its key and progress
@@ -91,6 +92,11 @@ export class GameScene extends Phaser.Scene {
     const sh = e.shelter;
     const shN = shelterSize(sh), shHalf = (shN - 1) / 2;
     if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: shelterRadius(sh, shN) });
+    // the stone piers of the bridges over it
+    const decorAt = (tx, ty) => (e.decor ?? []).some((d) => d.tx === tx && d.ty === ty);
+    for (const b of this.world.builder.bridges.values()) {
+      for (const p of pierTiles(b, decorAt)) if (containsTile(e, p.tx, p.ty)) others.push({ x: p.tx, y: p.ty, r: PIER_RADIUS });
+    }
     // its enclosure was just merged into this one: it keeps walking from where it is
     if (entry.w && entry.wEnc !== e.id && !this.world.builder.enclosures.has(entry.wEnc)) entry.wEnc = e.id;
     if (!entry.w || entry.wEnc !== e.id) {

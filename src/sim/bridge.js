@@ -61,13 +61,21 @@ export function checkBridge(grid, builder, trace) {
     const d = (e.decor ?? []).find((x) => x.tx === c.tx && x.ty === c.ty);
     return !!d && !ENCLOSURE_DECOR[d.type]?.low;
   });
+  // under the deck between two enclosures: grass only (a path there would be cut by the deck)
+  bad.push(...trace.slice(first, last + 1).filter((c, i) => !inside[first + i] && !grid.isFree(c.tx, c.ty)));
+  // the stairs of another bridge
+  bad.push(...[trace[first - 1], trace[last + 1]].filter((c) => grid.getTile(c.tx, c.ty).stair));
   if (bad.length) return fail('bridgeBlocked', bad);
   const deck = trace.slice(first, last + 1).map(cell);
   const toward = (s, d) => ({ tx: s.tx, ty: s.ty, dx: d.tx - s.tx, dy: d.ty - s.ty });
   const stairs = [toward(trace[first - 1], trace[first]), toward(trace[last + 1], trace[last])];
-  const paths = trace.filter((c) => grid.isFree(c.tx, c.ty)).map(cell);
+  // the foot of each flight of steps (the tile beyond, away from the deck): where one gets on and off
+  const feet = stairs.map((s) => ({ tx: s.tx - s.dx, ty: s.ty - s.dy }));
+  const badFeet = feet.filter((c) => !grid.isFree(c.tx, c.ty) && !(grid.isPath(c.tx, c.ty) && grid.getTile(c.tx, c.ty).occupant === null));
+  if (badFeet.length) return fail('bridgeEnds', badFeet);
+  const paths = [...trace, ...feet].filter((c, i, all) => grid.isFree(c.tx, c.ty) && all.findIndex((x) => same(x, c)) === i).map(cell);
   const cost = deck.length * BALANCE.bridgeCostPerTile + paths.filter((c) => !deck.some((d) => same(c, d))).length * BALANCE.pathCost;
-  return { ok: true, deck, paths, stairs, cost };
+  return { ok: true, deck, paths, stairs, feet, cost };
 }
 
 // Height (m) of a point (tile coordinates, tile centres on whole numbers) for someone walking there:
@@ -84,4 +92,25 @@ export function bridgeHeightAt(bridges, x, y) {
     }
   }
   return h;
+}
+
+// Height (m) of a person ({ pos, tile, path }) for the 3D view. On the stairs tile only someone using the
+// steps is raised (coming from or going to the deck, or still on the way down: `prevH`, their height on the
+// last frame); someone walking along a path past the stairs stays on the ground.
+export function personHeight(bridges, p, prevH = 0) {
+  const tx = Math.round(p.pos.x), ty = Math.round(p.pos.y);
+  for (const b of bridges) {
+    const onDeck = (c) => !!c && b.deck.some((d) => d.tx === c.tx && d.ty === c.ty);
+    if (onDeck({ tx, ty })) return BALANCE.bridgeDeckHeight;
+    if (!b.stairs.some((s) => s.tx === tx && s.ty === ty)) continue;
+    const climbing = prevH > 0.01 || onDeck(p.tile) || onDeck(p.path?.[0]) || onDeck(p.path?.[1]);
+    return climbing ? bridgeHeightAt([b], p.pos.x, p.pos.y) : 0;
+  }
+  return 0;
+}
+
+// The deck tiles that stand on a stone pier: every other one, not where a decoration is (`hasDecor(tx, ty)`).
+// Monsters walk around them (src/render/GameScene.js), the 3D view draws them (src/render3d/park-scene.js).
+export function pierTiles(bridge, hasDecor = () => false) {
+  return bridge.deck.filter((c) => (c.tx + c.ty) % 2 === 0 && !hasDecor(c.tx, c.ty));
 }

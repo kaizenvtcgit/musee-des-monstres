@@ -223,5 +223,7 @@ describe('bridges in the world', () => {
     const r = w.builder.placeBridge([4, 5, 6, 7, 8, 9].map((tx) => ({ tx, ty: 6 })));
     const loaded = deserializeWorld(JSON.parse(JSON.stringify(serializeWorld(w))));
     expect(loaded.builder.bridges.get(r.id).deck).toHaveLength(4);
+    expect(loaded.grid.getTile(4, 6).stair).toBe(r.id);
+    expect(loaded.grid.getTile(9, 6).stair).toBe(r.id);
   });
 });

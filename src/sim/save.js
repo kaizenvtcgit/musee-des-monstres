@@ -64,12 +64,15 @@ export function deserializeWorld(data) {
 
   // the grid, the builder maps and the entity lists are shared with w.ctx: fill them in place
   if (data.grid.w !== w.grid.w || data.grid.h !== w.grid.h) throw new Error('Wrong map size');
-  data.grid.tiles.forEach(([ground, occupant, bridge], i) => Object.assign(w.grid.tiles[i], { ground, occupant, bridge: bridge ?? null }));
+  data.grid.tiles.forEach(([ground, occupant, bridge], i) => Object.assign(w.grid.tiles[i], { ground, occupant, bridge: bridge ?? null, stair: null }));
   w.grid.version++;
   w.builder.nextId = data.builder.nextId;
   for (const e of data.builder.enclosures) w.builder.enclosures.set(e.id, e);
   for (const b of data.builder.buildings) w.builder.buildings.set(b.id, b);
-  for (const b of data.builder.bridges ?? []) w.builder.bridges.set(b.id, b);
+  for (const b of data.builder.bridges ?? []) {
+    w.builder.bridges.set(b.id, b);
+    for (const s of b.stairs) w.grid.tiles[s.ty * w.grid.w + s.tx].stair = b.id;
+  }
   for (const m of data.monsters) w.monsters.set(m.id, m);
   w.visitors.push(...data.visitors);
   w.keepers.push(...data.keepers);

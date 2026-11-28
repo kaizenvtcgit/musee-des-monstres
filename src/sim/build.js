@@ -59,6 +59,7 @@ export class Builder {
     for (const c of r.paths) this.grid.setGround(c.tx, c.ty, 'path');
     const id = `brg${this.nextId++}`;
     for (const c of r.deck) this.grid.setBridge(c.tx, c.ty, id);
+    for (const s of r.stairs) this.grid.setStair(s.tx, s.ty, id);
     this.bridges.set(id, { id, deck: r.deck, stairs: r.stairs, price: r.deck.length * BALANCE.bridgeCostPerTile });
     return { ok: true, id, cost: r.cost };
   }
@@ -68,6 +69,7 @@ export class Builder {
     const b = this.bridges.get(id);
     if (!b) return 0;
     for (const c of b.deck) this.grid.setBridge(c.tx, c.ty, null);
+    for (const s of b.stairs) this.grid.setStair(s.tx, s.ty, null);
     this.bridges.delete(id);
     this.wallet.earn(b.price * BALANCE.demolishRefund);
     this.onBridgeRemoved(b);

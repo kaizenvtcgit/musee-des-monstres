@@ -176,8 +176,8 @@ describe('bridges', () => {
     const before = wallet.money;
     const r = builder.placeBridge([{ tx: 4, ty: 3 }, ...[4, 5, 6].map((ty) => ({ tx: 4, ty })), { tx: 4, ty: 7 }]);
     expect(r.ok).toBe(true);
-    expect(r.cost).toBe(3 * 50 + 2 * 10);
-    expect(wallet.money).toBe(before - 170);
+    expect(r.cost).toBe(3 * 50 + 4 * 10); // the two ends and the two feet of the stairs get a path
+    expect(wallet.money).toBe(before - 190);
     for (const ty of [4, 5, 6]) expect(grid.getTile(4, ty).bridge).toBe(r.id);
     expect(grid.getTile(4, 5).occupant).toMatch(/^enc/); // still the enclosure's, under the bridge
     expect(grid.isPath(4, 3) && grid.isPath(4, 7)).toBe(true);
@@ -255,5 +255,35 @@ describe('bridges', () => {
     const encId = [...builder.enclosures.keys()][0];
     builder.placeBridge(row(2, 7, 5));
     expect(builder.accessTiles(encId)).toContainEqual({ tx: 4, ty: 5 });
+  });
+});
+
+describe('bridge stairs', () => {
+  it('placeBridge marks both stairs, removeBridge clears them', () => {
+    const { grid, builder } = setup();
+    builder.placeEnclosure(3, 4, 6, 6, 'lava');
+    const r = builder.placeBridge([2, 3, 4, 5, 6, 7].map((tx) => ({ tx, ty: 5 })));
+    expect(r.ok).toBe(true);
+    expect(grid.getTile(2, 5).stair).toBe(r.id);
+    expect(grid.getTile(7, 5).stair).toBe(r.id);
+    expect(grid.isPath(1, 5) && grid.isPath(8, 5)).toBe(true); // the feet
+    builder.removeBridge(r.id);
+    expect(grid.getTile(2, 5).stair).toBeNull();
+  });
+  it('a stand next to a deck only does not touch a path', () => {
+    const { grid, builder } = setup();
+    builder.placeEnclosure(3, 4, 6, 6, 'lava');
+    builder.placeEnclosure(9, 4, 11, 6, 'lava');
+    builder.placeBridge([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((tx) => ({ tx, ty: 5 })));
+    const b = builder.placeBuilding('snack', 7, 6);
+    expect(b.ok).toBe(true);
+    expect(builder.touchesPath(b.id)).toBe(false); // (7,5) is deck, up in the air
+  });
+  it('an enclosure is not watched from the deck of another one', () => {
+    const { builder } = setup();
+    builder.placeEnclosure(3, 4, 6, 6, 'lava');
+    const other = builder.placeEnclosure(3, 7, 6, 8, 'water');
+    builder.placeBridge([2, 3, 4, 5, 6, 7].map((tx) => ({ tx, ty: 6 })));
+    expect(builder.accessTiles(other.id)).not.toContainEqual({ tx: 4, ty: 6 });
   });
 });

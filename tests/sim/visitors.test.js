@@ -151,3 +151,18 @@ describe('watching from a bridge', () => {
     expect(gain(true)).toBeCloseTo(gain(false) * 1.25, 5);
   });
 });
+
+describe('walking onto a bridge', () => {
+  it('a visitor goes up the stairs and watches from the deck', () => {
+    const ctx = setup(); // path on y = 10
+    const id = addEnclosure(ctx, 5, 4, 8, 7);
+    ctx.builder.placePath(6, 9);
+    const trace = [8, 7, 6, 5, 4, 3].map((ty) => ({ tx: 6, ty }));
+    expect(ctx.builder.placeBridge(trace).ok).toBe(true);
+    const v = createVisitor(ctx.entrance);
+    v.target = { kind: 'enclosure', id, tile: { tx: 6, ty: 5 } };
+    const t = run(v, ctx, 60, (x) => x.state === 'watching');
+    expect(t).not.toBeNull();
+    expect(v.tile).toEqual({ tx: 6, ty: 5 });
+  });
+});

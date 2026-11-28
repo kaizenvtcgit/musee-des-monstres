@@ -18,9 +18,9 @@ export function findPath(grid, from, to, { allowGrass = false } = {}) {
     const cur = queue[i];
     for (const n of grid.neighbors4(cur.tx, cur.ty)) {
       const k = key(n.tx, n.ty);
-      if (prev.has(k) || !walkable(n.tx, n.ty)) continue;
+      if (prev.has(k) || !walkable(n.tx, n.ty) || !grid.canStep(cur.tx, cur.ty, n.tx, n.ty)) continue;
       prev.set(k, key(cur.tx, cur.ty));
-      if (k === goal) return rebuild(prev, goal, grid.w);
+      if (k === goal) return stairDetours(grid, from, rebuild(prev, goal, grid.w));
       queue.push(n);
     }
   }
@@ -39,13 +39,37 @@ export function findNearest(grid, from, isGoal) {
     for (const n of grid.neighbors4(cur.tx, cur.ty)) {
       const k = key(n.tx, n.ty);
       const t = grid.getTile(n.tx, n.ty);
-      if (prev.has(k) || (t.occupant !== null && !t.bridge)) continue;
+      if (prev.has(k) || (t.occupant !== null && !t.bridge) || !grid.canStep(cur.tx, cur.ty, n.tx, n.ty)) continue;
       prev.set(k, key(cur.tx, cur.ty));
-      if (isGoal(n.tx, n.ty)) return rebuild(prev, k, grid.w);
+      if (isGoal(n.tx, n.ty)) return stairDetours(grid, from, rebuild(prev, k, grid.w));
       queue.push(n);
     }
   }
   return null;
+}
+
+// Getting on or off a bridge is done along its stairs, from or to their foot (the tile beyond them, away
+// from the deck): someone coming down who turns along a path at the stairs first walks down to the foot
+// and back, so nobody turns half-way up a flight of steps (see personHeight, src/sim/bridge.js).
+export function stairDetours(grid, from, path) {
+  const seq = [from, ...path];
+  const out = [];
+  const same = (a, b) => !!a && !!b && a.tx === b.tx && a.ty === b.ty;
+  for (let i = 0; i < seq.length; i++) {
+    const s = seq[i];
+    if (i > 0) out.push(s);
+    const id = grid.getTile(s.tx, s.ty)?.stair;
+    if (!id) continue;
+    const prev = seq[i - 1], next = seq[i + 1];
+    const onDeck = (c) => !!c && grid.getTile(c.tx, c.ty)?.bridge === id;
+    if (onDeck(prev) === onDeck(next)) continue; // across, or not using this bridge
+    const d = onDeck(prev) ? prev : next;
+    const foot = { tx: 2 * s.tx - d.tx, ty: 2 * s.ty - d.ty };
+    const other = onDeck(prev) ? next : prev;
+    if (same(other, foot) || !grid.isWalkable(foot.tx, foot.ty)) continue;
+    out.push(foot, { tx: s.tx, ty: s.ty });
+  }
+  return out;
 }
 
 function rebuild(prev, goal, w) {

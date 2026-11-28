@@ -44,9 +44,9 @@ describe('checkBridge', () => {
     const r = checkBridge(grid, builder, row(2, 7, 5));
     expect(r.ok).toBe(true);
     expect(r.deck).toEqual(row(3, 6, 5));
-    expect(r.paths).toEqual([]);
+    expect(r.paths).toEqual([{ tx: 1, ty: 5 }, { tx: 8, ty: 5 }]); // the feet of the stairs
     expect(r.stairs).toEqual([{ tx: 2, ty: 5, dx: 1, dy: 0 }, { tx: 7, ty: 5, dx: -1, dy: 0 }]);
-    expect(r.cost).toBe(4 * BALANCE.bridgeCostPerTile);
+    expect(r.cost).toBe(4 * BALANCE.bridgeCostPerTile + 2 * BALANCE.pathCost);
     expect(BALANCE.bridgeCostPerTile).toBe(50);
   });
   it('a bridge with a turn', () => {
@@ -56,14 +56,14 @@ describe('checkBridge', () => {
     expect(r.ok).toBe(true);
     expect(r.deck).toEqual([{ tx: 3, ty: 5 }, { tx: 4, ty: 5 }, { tx: 4, ty: 6 }]);
     expect(r.stairs[1]).toEqual({ tx: 4, ty: 7, dx: 0, dy: -1 });
-    expect(r.paths).toEqual([{ tx: 4, ty: 7 }]); // grass at the end: a path is laid
+    expect(r.paths).toEqual([{ tx: 4, ty: 7 }, { tx: 1, ty: 5 }, { tx: 4, ty: 8 }]); // grass at the end and the feet: paths
   });
   it('grass at both ends: paths are laid there and paid', () => {
     const { grid, builder } = setup();
     const r = checkBridge(grid, builder, [3, 4, 5, 6, 7].map((ty) => ({ tx: 4, ty })));
     expect(r.ok).toBe(true);
-    expect(r.paths).toEqual([{ tx: 4, ty: 3 }, { tx: 4, ty: 7 }]);
-    expect(r.cost).toBe(3 * 50 + 2 * BALANCE.pathCost);
+    expect(r.paths).toEqual([{ tx: 4, ty: 3 }, { tx: 4, ty: 7 }, { tx: 4, ty: 2 }, { tx: 4, ty: 8 }]);
+    expect(r.cost).toBe(3 * 50 + 4 * BALANCE.pathCost);
   });
   it('too short', () => {
     const { grid, builder } = setup();
@@ -146,5 +146,87 @@ describe('traceToward', () => {
     const { traceToward } = await import('../../src/sim/bridge.js');
     const t = [{ tx: 1, ty: 1 }, { tx: 2, ty: 1 }, { tx: 2, ty: 2 }, { tx: 1, ty: 2 }, { tx: 0, ty: 2 }];
     expect(traceToward(t, { tx: 2, ty: 2 })).toEqual(t.slice(0, 3)); // back onto an earlier tile: shortened to it
+  });
+});
+
+describe('checkBridge: ends and crossings', () => {
+  it('the foot of the stairs gets a path when it is grass', () => {
+    const { grid, builder } = setup();
+    const r = checkBridge(grid, builder, row(2, 7, 5));
+    expect(r.feet).toEqual([{ tx: 1, ty: 5 }, { tx: 8, ty: 5 }]);
+    expect(r.paths).toEqual([{ tx: 1, ty: 5 }, { tx: 8, ty: 5 }]);
+    expect(r.cost).toBe(4 * 50 + 2 * BALANCE.pathCost);
+  });
+  it('the foot of the stairs must be free or a path', () => {
+    const { grid, builder } = setup();
+    grid.setOccupant(1, 5, 'bld1');
+    const r = checkBridge(grid, builder, row(2, 7, 5));
+    expect(r.reason).toBe('bridgeEnds');
+    expect(r.bad).toEqual([{ tx: 1, ty: 5 }]);
+  });
+  it('an existing path between two enclosures cannot go under the deck', () => {
+    const { grid, builder } = setup();
+    builder.placeEnclosure(9, 4, 11, 6, 'lava');
+    builder.placePath(8, 5);
+    builder.placePath(13, 5);
+    const r = checkBridge(grid, builder, row(2, 12, 5)); // (7,5) and (8,5) are paths, between the two enclosures
+    expect(r.reason).toBe('bridgeBlocked');
+    expect(r.bad).toEqual([{ tx: 7, ty: 5 }, { tx: 8, ty: 5 }]);
+  });
+  it('grass between two enclosures is fine (deck over it)', () => {
+    const grid = new Grid(20, 20);
+    const builder = new Builder(grid, new Wallet(100000));
+    builder.placeEnclosure(3, 4, 6, 6, 'lava');
+    builder.placeEnclosure(9, 4, 11, 6, 'lava');
+    const r = checkBridge(grid, builder, row(2, 12, 5));
+    expect(r.ok).toBe(true);
+    expect(r.deck).toEqual(row(3, 11, 5));
+  });
+  it('the stairs of another bridge: blocked', () => {
+    const { grid, builder } = setup();
+    grid.setStair(2, 5, 'brg1');
+    expect(checkBridge(grid, builder, row(2, 7, 5)).reason).toBe('bridgeBlocked');
+  });
+});
+
+describe('personHeight', () => {
+  const D = 3.9;
+  // deck on row 5, x 3..6; west stairs on (2,5) going up toward +x; their foot on (1,5)
+  const bridges = [{ id: 'brg1', deck: row(3, 6, 5), stairs: [{ tx: 2, ty: 5, dx: 1, dy: 0 }, { tx: 7, ty: 5, dx: -1, dy: 0 }] }];
+  const at = (x, y, tile, path) => ({ pos: { x, y }, tile, path });
+  it('on the deck', async () => {
+    const { personHeight } = await import('../../src/sim/bridge.js');
+    expect(personHeight(bridges, at(4, 5, { tx: 4, ty: 5 }, []), 0)).toBe(D);
+  });
+  it('walking past the stairs along a path stays on the ground', async () => {
+    const { personHeight } = await import('../../src/sim/bridge.js');
+    expect(personHeight(bridges, at(2, 5, { tx: 2, ty: 4 }, [{ tx: 2, ty: 5 }, { tx: 2, ty: 6 }]), 0)).toBe(0);
+  });
+  it('coming down from the deck', async () => {
+    const { personHeight } = await import('../../src/sim/bridge.js');
+    expect(personHeight(bridges, at(2.25, 5, { tx: 3, ty: 5 }, [{ tx: 2, ty: 5 }, { tx: 1, ty: 5 }]), D)).toBeCloseTo(D * 0.75);
+    // on down to the foot: still on the steps
+    expect(personHeight(bridges, at(1.8, 5, { tx: 2, ty: 5 }, [{ tx: 1, ty: 5 }, { tx: 2, ty: 5 }]), D * 0.5)).toBeCloseTo(D * 0.3);
+  });
+  it('back from the foot to walk along the path: on the ground', async () => {
+    const { personHeight } = await import('../../src/sim/bridge.js');
+    expect(personHeight(bridges, at(1.8, 5, { tx: 1, ty: 5 }, [{ tx: 2, ty: 5 }, { tx: 2, ty: 6 }]), 0)).toBe(0);
+  });
+  it('going up from the foot', async () => {
+    const { personHeight } = await import('../../src/sim/bridge.js');
+    expect(personHeight(bridges, at(1.8, 5, { tx: 1, ty: 5 }, [{ tx: 2, ty: 5 }, { tx: 3, ty: 5 }]), 0)).toBeCloseTo(D * 0.3);
+  });
+  it('standing still on the stairs, arrived from below', async () => {
+    const { personHeight } = await import('../../src/sim/bridge.js');
+    expect(personHeight(bridges, at(2, 5, { tx: 2, ty: 5 }, null), 0)).toBe(0);
+  });
+});
+
+describe('pierTiles', () => {
+  it('every other deck tile, not where a decoration stands', async () => {
+    const { pierTiles } = await import('../../src/sim/bridge.js');
+    const b = { deck: row(3, 6, 5) };
+    expect(pierTiles(b)).toEqual([{ tx: 3, ty: 5 }, { tx: 5, ty: 5 }]);
+    expect(pierTiles(b, (tx, ty) => tx === 5 && ty === 5)).toEqual([{ tx: 3, ty: 5 }]);
   });
 });

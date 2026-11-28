@@ -176,7 +176,7 @@ function chooseTarget(v, ctx) {
 
 function planPath(v, ctx) {
   // the tile we were heading to may have been demolished or built over: pick again
-  if (v.target.kind !== 'exit' && !ctx.grid.isPath(v.target.tile.tx, v.target.tile.ty)) {
+  if (v.target.kind !== 'exit' && !ctx.grid.isWalkable(v.target.tile.tx, v.target.tile.ty)) {
     v.target = null;
     chooseTarget(v, ctx);
   }

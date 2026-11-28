@@ -17,7 +17,7 @@ import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { standOf } from '../config/stands.js';
 import { faceToPath, quarterAngle } from '../sim/facing.js';
 import { drawBubble } from '../render/bubbles.js';
-import { bridgeHeightAt } from '../sim/bridge.js';
+import { personHeight, pierTiles } from '../sim/bridge.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
@@ -531,11 +531,11 @@ vec2 flowUv(vec2 uv) {
     for (const b of builder.bridges.values()) {
       const onDeck = (tx, ty) => b.deck.some((c) => c.tx === tx && c.ty === ty);
       const stairAt = (tx, ty) => b.stairs.some((s) => s.tx === tx && s.ty === ty);
+      // stone piers (not through a decoration; the monsters walk around them)
+      for (const { tx, ty } of pierTiles(b, decorAt)) box(0.55, D - DECK, 0.55, stone, tx * T, (D - DECK) / 2, ty * T);
       for (const { tx, ty } of b.deck) {
         const x = tx * T, z = ty * T;
         box(T, DECK, T, wood, x, D - DECK / 2, z, (tx + ty) % 2 ? 0 : Math.PI / 2);
-        // a stone pier every other tile (not through a decoration)
-        if ((tx + ty) % 2 === 0 && !decorAt(tx, ty)) box(0.55, D - DECK, 0.55, stone, x, (D - DECK) / 2, z);
         // railings on the sides with no deck or stairs beyond
         for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
           if (onDeck(tx + dx, ty + dy) || stairAt(tx + dx, ty + dy)) continue;
@@ -573,6 +573,15 @@ vec2 flowUv(vec2 uv) {
         }
       }
     }
+  }
+
+  // How high a visitor or keeper walks: on a bridge, up or down its stairs (src/sim/bridge.js, personHeight).
+  heightOf(p) {
+    this.personH ??= new Map();
+    if (this.personH.size > 500) this.personH.clear();
+    const h = personHeight(this.world.builder.bridges.values(), p, this.personH.get(p.id) ?? 0);
+    this.personH.set(p.id, h);
+    return h;
   }
 
   // ---------------------------------------------------------------- buildings and scenery
@@ -1183,11 +1192,11 @@ vec2 flowUv(vec2 uv) {
     for (const v of this.world.visitors) {
       if (v.state === 'gone' || !v.pos || !near(v.pos.x, v.pos.y)) continue;
       const k = [...v.id].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
-      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, y3: bridgeHeightAt(this.world.builder.bridges.values(), v.pos.x, v.pos.y), model: this.modelOf({ kind: 'visitor', id: v.id }), walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
+      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, y3: this.heightOf(v), model: this.modelOf({ kind: 'visitor', id: v.id }), walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
     }
     for (const kp of this.world.keepers) {
       if (!kp.pos || !near(kp.pos.x, kp.pos.y)) continue;
-      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, y3: bridgeHeightAt(this.world.builder.bridges.values(), kp.pos.x, kp.pos.y), model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8, ...this.follow(kp.id), icon: kp.state === 'chasing' ? 'bubble-alert' : null });
+      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, y3: this.heightOf(kp), model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8, ...this.follow(kp.id), icon: kp.state === 'chasing' ? 'bubble-alert' : null });
     }
     this.sync(this.people, items, (it) => this.spawn(it.model, it.h), dt);
   }
