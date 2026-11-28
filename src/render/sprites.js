@@ -38,7 +38,7 @@ const LOOPING = new Set(['walk', 'idle', 'fly', 'run', 'wave', 'threat']);
 const ANIM_FPS = {
   default: { walk: 8, idle: 3 },
   // dragonnet: rendered from dragon_animated_v2.glb with scripts/render-model (one loop = one clip)
-  dragonnet: { walk: 10, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
+  dragonnet: { walk: 12, idle: 6, fly: 10, flap: 5, stretch: 6, look: 6, tail: 6 },
   kraken: { walk: 10, idle: 4, threat: 6, look: 5, wiggle: 6, sleep: 4 },
   spectre: { walk: 6, idle: 3, threat: 4, look: 3, haunt: 4, sleep: 2 },
   yeti: {
@@ -69,7 +69,8 @@ const FRAME_SIZE = { spectre: 176 };
 // - spectral: see-through floating ghost (src/render/monsterfx.js): no shadow, mist, glow, fade in/out.
 // - idleKinds: only these kinds are random idle actions (the others are played on purpose);
 // - walkSpeed: tiles / s matching the stride of its walk animation (no sliding feet); restRange: [min, max]
-//   seconds it stays put between two strolls in its enclosure;
+//   seconds it stays put between two strolls in its enclosure; walkPulse: speed factor for each frame of
+//   its walk (a gait whose speed changes during a step), average 1;
 // - statue: [min, max] seconds it may stand perfectly still (an idle action);
 // - sleep: { chance, loops: [min, max] }: an idle action may be a nap: sit down, sleep, wake up;
 // - angry: { below, kinds }: under this happiness, these actions join the idle ones;
@@ -82,6 +83,8 @@ const FRAME_SIZE = { spectre: 176 };
 // - glow: its light layer (eyes, cracks): { base } brightness at rest (0..1);
 // - heavy: dust, pebbles, tremors and sounds on the moments of its events file.
 export const MONSTER_FX = {
+  // its feet push back at 0.19 tile/s with the Walk clip at 10 fps: played a little faster (12 fps), 0.23
+  dragonnet: { walkSpeed: 0.23 },
   spectre: {
     idleAlso: ['threat'], actionLoops: { sleep: 2 }, actionGap: [6, 15], crossfadeMs: 260, spectral: true,
   },
@@ -102,7 +105,10 @@ export const MONSTER_FX = {
   golem: {
     idleKinds: ['look', 'stretch', 'chestbeat', 'shake'],
     actionGap: [12, 28],
-    walkSpeed: 0.45,
+    // its planted foot pushes back at 0.375 tile/s on average (measured on the Walk clip, all directions),
+    // but unevenly: almost stopped when its weight passes from one foot to the other, then a heavy lunge
+    walkSpeed: 0.375,
+    walkPulse: [0.26, 0.25, 1.3, 1.62, 1.68, 1.49, 1.05, 0.46, 0.26, 0.25, 1.3, 1.62, 1.68, 1.49, 1.05, 0.46],
     restRange: [6, 16],
     statue: [10, 20],
     sleep: { chance: 0.25, loops: [3, 5] },

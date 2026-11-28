@@ -509,10 +509,16 @@ export class GameScene extends Phaser.Scene {
         return { x: w.x, y: w.y };
       }
     } else entry.sv.stage = null;
+    const fx = monsterFx(m.speciesId);
+    // an uneven gait (the golem): its speed follows the frame of its walk, so its feet stay planted
+    if (fx.walkPulse && !entry.running) {
+      const a = entry.sprite?.anims;
+      const i = a?.isPlaying && a.currentAnim?.key.includes('-walk-') ? a.currentFrame.index - 1 : -1;
+      entry.w.speed = fx.walkSpeed * (fx.walkPulse[i] ?? 1);
+    }
     const goal = entry.w.goal;
     stepWander(entry.w, others, bounds, dt, Math.random);
     // a new stroll: now and then a run (monsters with a run animation)
-    const fx = monsterFx(m.speciesId);
     if (fx.runChance && entry.w.goal && entry.w.goal !== goal) {
       entry.running = Math.random() < fx.runChance;
       entry.w.speed = entry.running ? fx.runSpeed : fx.walkSpeed;

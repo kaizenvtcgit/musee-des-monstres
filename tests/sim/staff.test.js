@@ -130,7 +130,7 @@ describe('species speed', () => {
       updateEscaped(m, ctx, 0.2);
       return Math.hypot(m.pos.x - 10, m.pos.y - 10);
     };
-    expect(travelled('golem')).toBeCloseTo(0.2 * 0.45, 5);
+    expect(travelled('golem')).toBeCloseTo(0.2 * 0.375, 5);
     expect(travelled('dragonnet')).toBeCloseTo(0.2, 5);
     expect(travelled('yeti')).toBeCloseTo(0.2 * 0.56, 5); // escaped, it runs (its run stride)
   });
