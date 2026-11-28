@@ -426,7 +426,7 @@ export class GameScene extends Phaser.Scene {
       case 'snack':
       case 'souvenir':
       case 'atm':
-        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty));
+        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty, { look: this.tool.look }));
         break;
       case 'demolish':
         if (isOnParking(world.parking, tile.tx, tile.ty)) this.report(world.demolishParking());

@@ -67,9 +67,9 @@ const GROUNDS = {
 };
 // water habitats: colour of the water
 const WATERS = { water: 0x1f6474, reef: 0x1f7a7c, abyss: 0x0a1a2c, swamp: 0x3a4226 };
-// The garden decoration (a building of one tile): its looks, picked from its id (the first six as in 2D).
+// The garden decorations (buildings of one tile, picked in the Furniture menu: their `look`).
 // name: prop of props.glb.json (or `decor`: a node of decor.glb.json), its height or width in metres.
-const GARDEN = [
+export const GARDEN = [
   { name: 'pottedPlant', height: 1.3 },
   { name: 'shrubClump', height: 1.2 },
   { name: 'streetLamp', height: 3.6 },
@@ -514,10 +514,12 @@ vec2 flowUv(vec2 uv) {
     for (const b of this.world.builder.buildings.values()) {
       const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
       if (b.type === 'snack') {
-        // two stands, picked from the building id: the Kraken's waffles or the Dragon's grill
+        // two stands, the one picked in the Snack menu: the Kraken's waffles or the Dragon's grill (older games:
+        // picked from the building id)
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
+        const waffles = b.look ? b.look === 'waffles' : n % 2 === 1;
         // (the waffle stand's counter is on its +z side, the grill's on its +x side)
-        const [model, front] = n % 2 ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
+        const [model, front] = waffles ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
         // a real kiosk next to the visitors: counter about waist high, the edge of its roof about 2.3 m up
         // (3.1 m across: it overhangs its tile a little)
         this.placeModel(group, model, cx, cz, 3.1, this.faceToPath(b) + front, b.id);
@@ -535,9 +537,9 @@ vec2 flowUv(vec2 uv) {
         // furnished inside (seen through its door and windows): models/blender/musee-decors.blend, scene TentInterior
         this.placeModel(group, 'expedition-base', cx, cz, (b.x1 - b.x0 + 1) * T * 1.13, this.faceToPath(b), b.id, 'expedition-interior');
       } else {
-        // a garden decoration: one of several props, picked from the building id so it never changes
+        // a garden decoration: the one picked in the Furniture menu (older games: picked from its id)
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
-        const v = GARDEN[n % GARDEN.length];
+        const v = GARDEN.find((g) => g.name === b.look) ?? GARDEN[n % GARDEN.length];
         const rot = v.facePath ? this.faceToPath(b) : (n * 2.39996) % (Math.PI * 2);
         const g = garden.get(v.name) ?? garden.set(v.name, { v, items: [], ids: [] }).get(v.name);
         g.items.push({ cx, cz, rot });
@@ -1061,44 +1063,68 @@ vec2 flowUv(vec2 uv) {
         mixer.clipAction(idle).play();
         mixer.update(0.4);
       }
-      obj.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(obj, true);
-      const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
-      const scene = new THREE.Scene();
-      scene.environment = this.s3.environment;
-      scene.add(obj, new THREE.HemisphereLight(0xffffff, 0x6a6458, 1.4));
-      const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
-      sun.position.set(c.x - 3, c.y + 6, c.z + 5);
-      scene.add(sun);
-      const cam = new THREE.PerspectiveCamera(28, w / h, 0.01, 100);
-      const r = Math.max(size.y, size.x * 0.9, size.z * 0.9) * 0.6 / Math.tan(THREE.MathUtils.degToRad(14));
-      cam.position.copy(c).add(new THREE.Vector3(0.45, 0.25, 1).normalize().multiplyScalar(r));
-      cam.lookAt(c);
-      // drawn twice as big, then reduced (smooth edges)
-      const W = w * 2, H = h * 2;
-      const rt = new THREE.WebGLRenderTarget(W, H);
-      rt.texture.colorSpace = THREE.SRGBColorSpace;
-      const ren = this.renderer, oldAlpha = ren.getClearAlpha(), oldColor = ren.getClearColor(new THREE.Color());
-      ren.setRenderTarget(rt);
-      ren.setClearColor(0x000000, 0);
-      ren.clear();
-      ren.render(scene, cam);
-      const px = new Uint8Array(W * H * 4);
-      ren.readRenderTargetPixels(rt, 0, 0, W, H, px);
-      ren.setRenderTarget(null);
-      ren.setClearColor(oldColor, oldAlpha);
-      rt.dispose();
-      const big = document.createElement('canvas');
-      big.width = W; big.height = H;
-      const img = big.getContext('2d').createImageData(W, H);
-      for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4); // rows bottom-up
-      big.getContext('2d').putImageData(img, 0, 0);
-      const out = document.createElement('canvas');
-      out.width = w; out.height = h;
-      out.getContext('2d').drawImage(big, 0, 0, w, h);
-      this.portraits.set(name, out.toDataURL());
+      this.portraits.set(name, this.snapshot(obj, w, h));
     }).catch((err) => console.error(err));
     return null;
+  }
+
+  // A picture of a garden decoration ('parkBench', 'trashCan'...), of the cash machine ('atm') or of a snack
+  // stand ('waffles', 'grill') for the menus: a data URL, or null while it is being made.
+  thingPortrait(key) {
+    this.portraits ??= new Map();
+    const id = `thing:${key}`;
+    if (this.portraits.has(id)) return this.portraits.get(id);
+    this.portraits.set(id, null);
+    const stand = { waffles: 'stand-kraken-waffles', grill: 'stand-dragon-grill' }[key];
+    const make = stand || key === 'atm'
+      ? this.model(stand ?? 'atm').then((m) => m.scene.clone(true))
+      : Promise.all([this.props(), this.decorNodes()]).then(([props, decor]) => {
+        const v = GARDEN.find((g) => g.name === key);
+        const tpl = v?.decor ? decor.get(v.decor) : props.get(key);
+        return tpl ? tpl.clone(true) : null;
+      });
+    make.then((obj) => { if (obj) this.portraits.set(id, this.snapshot(obj, 96, 96)); }).catch((err) => console.error(err));
+    return null;
+  }
+
+  // Renders an object alone, seen from the front and a little from the side, into a w x h picture (data URL).
+  snapshot(obj, w, h) {
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj, true);
+    const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+    const scene = new THREE.Scene();
+    scene.environment = this.s3.environment;
+    scene.add(obj, new THREE.HemisphereLight(0xffffff, 0x6a6458, 1.4));
+    const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
+    sun.position.set(c.x - 3, c.y + 6, c.z + 5);
+    scene.add(sun);
+    const cam = new THREE.PerspectiveCamera(28, w / h, 0.01, 1000);
+    const r = Math.max(size.y, size.x * 0.9, size.z * 0.9) * 0.6 / Math.tan(THREE.MathUtils.degToRad(14));
+    cam.position.copy(c).add(new THREE.Vector3(0.45, 0.25, 1).normalize().multiplyScalar(r));
+    cam.lookAt(c);
+    // drawn twice as big, then reduced (smooth edges)
+    const W = w * 2, H = h * 2;
+    const rt = new THREE.WebGLRenderTarget(W, H);
+    rt.texture.colorSpace = THREE.SRGBColorSpace;
+    const ren = this.renderer, oldAlpha = ren.getClearAlpha(), oldColor = ren.getClearColor(new THREE.Color());
+    ren.setRenderTarget(rt);
+    ren.setClearColor(0x000000, 0);
+    ren.clear();
+    ren.render(scene, cam);
+    const px = new Uint8Array(W * H * 4);
+    ren.readRenderTargetPixels(rt, 0, 0, W, H, px);
+    ren.setRenderTarget(null);
+    ren.setClearColor(oldColor, oldAlpha);
+    rt.dispose();
+    const big = document.createElement('canvas');
+    big.width = W; big.height = H;
+    const img = big.getContext('2d').createImageData(W, H);
+    for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4); // rows bottom-up
+    big.getContext('2d').putImageData(img, 0, 0);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    out.getContext('2d').drawImage(big, 0, 0, w, h);
+    return out.toDataURL();
   }
 
   // The model of a visitor (always the same for a given visitor), of a keeper, of a monster.

@@ -163,6 +163,8 @@ export class Builder {
   }
 
   // opts.free: no cost (initial world); opts.fixed: cannot be demolished.
+  // opts.look: which one it is, picked in the menus (a garden decoration: 'parkBench', 'trashCan'...;
+  // a snack: 'waffles' or 'grill'); without it (older games), the look is picked from its id.
   placeBuilding(type, tx, ty, opts = {}) {
     const def = BUILDING_DEFS[type];
     const x1 = tx + def.size - 1, y1 = ty + def.size - 1;
@@ -171,7 +173,7 @@ export class Builder {
     const price = opts.free ? 0 : def.price;
     if (!this.wallet.spend(price)) return fail('noMoney');
     const id = `${type}${this.nextId++}`;
-    this.buildings.set(id, { id, type, x0: tx, y0: ty, x1, y1, price, fixed: !!opts.fixed });
+    this.buildings.set(id, { id, type, x0: tx, y0: ty, x1, y1, price, fixed: !!opts.fixed, ...(opts.look ? { look: opts.look } : {}) });
     this.#fillRect(tx, ty, x1, y1, id);
     return { ok: true, id };
   }

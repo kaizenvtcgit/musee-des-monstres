@@ -202,6 +202,16 @@ export function generateTextures(scene) {
     g.fillTriangle(32, 0, 37, 14, 27, 14);
     g.fillTriangle(32, 18, 37, 4, 27, 4);
   });
+  // the Furniture menu: a park bench
+  tex(scene, 'furniture', 64, 64, (g) => {
+    g.fillStyle(0x7a4a2a);
+    g.fillRect(10, 20, 44, 6);
+    g.fillRect(10, 30, 44, 6);
+    g.fillRect(8, 40, 48, 6);
+    g.fillStyle(0x2b2d31);
+    g.fillRect(12, 46, 5, 12);
+    g.fillRect(47, 46, 5, 12);
+  });
   // the cash machine: a grey box, its blue sign and dark screen
   tex(scene, 'atm', 64, 64, (g) => {
     g.fillStyle(0x3a3d42);

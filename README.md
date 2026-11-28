@@ -55,15 +55,16 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   monstre né (on voit les œufs dedans, qui brillent et bougent à l'approche de l'éclosion).
 - **Allée** : glisser pour tracer.
 - **Enclos** : choisir l'habitat, puis glisser un rectangle. Deux enclos voisins du même habitat fusionnent.
-- **Décoration** : le jardin (sur l'herbe : pot de plante, arbuste, lampadaire, banc, jardinière, rochers ou
-  poubelle ; rend les visiteurs heureux), 3 décorations par habitat à placer dans un enclos du bon habitat
+- **Mobilier** : un menu où l'on choisit quoi poser sur l'herbe, près des allées : banc, poubelle, lampadaire, pot
+  de plante, arbuste, jardinière, rochers (100 pièces, rendent les visiteurs heureux autour) et le distributeur de
+  billets (400 pièces : les visiteurs qui passent devant dépensent ensuite 25 % de plus au snack et à la boutique).
+- **Décoration** : 3 décorations par habitat à placer dans un enclos du bon habitat
   (monstres plus heureux, visiteurs plus attirés ; les 4 premières comptent), et l'**abri** : antre volcanique,
   grotte sous-marine, mausolée, tertre moussu ou caverne de glace, sur 2 × 2 cases d'un enclos d'au moins 6 cases.
   Le monstre s'y réfugie de temps en temps (plus souvent s'il est stressé) : il se repose à l'entrée, ou s'y cache.
   Il y est plus heureux, mais caché il n'attire plus les visiteurs.
-- **Snack**, **Souvenirs** (la Fabrique à Monstres) : les visiteurs y dépensent leur argent.
-- **Distributeur** (400 pièces) : un distributeur de billets à poser au bord d'une allée. Les visiteurs qui passent
-  devant retirent de l'argent et dépensent ensuite 25 % de plus au snack et à la boutique.
+- **Snack** (un menu : les Gaufres du Kraken ou le Grill du Dragon), **Souvenirs** (la Fabrique à Monstres) : les
+  visiteurs y dépensent leur argent.
 - **Parking** (1 500 pièces, un seul) : à poser sur l'herbe devant l'entrée, entre le parc et la route (pas devant le
   portail). Les visiteurs viennent 30 % plus souvent, en voiture : elle arrive par la route, se gare, ses passagers
   (1 à 3) marchent jusqu'à l'entrée, et quand ils sont tous revenus elle sort en marche arrière et repart. Plein

@@ -13,14 +13,19 @@ const TOOLS = [
   { type: 'select', label: 'tool.select', icon: 'visitor-0' },
   { type: 'path', label: 'tool.path', icon: 'tile-path', price: () => t('tool.perTile', { n: BALANCE.pathCost }) },
   { type: 'enclosure', label: 'tool.enclosure', icon: 'tile-forest', price: () => t('tool.perTile', { n: BALANCE.enclosureCostPerTile }) },
-  { type: 'decoration', label: 'tool.decoration', icon: 'decoration', price: () => t('tool.price', { n: BALANCE.decorationCost }) },
+  { type: 'decoration', label: 'tool.decoration', icon: 'decoration', price: () => t('tool.from', { n: 100 }) },
+  { type: 'furniture', label: 'tool.furniture', icon: 'furniture', price: () => t('tool.from', { n: BALANCE.decorationCost }) },
   { type: 'snack', label: 'tool.snack', icon: 'snack', price: () => t('tool.price', { n: BALANCE.snackCost }) },
   { type: 'souvenir', label: 'tool.souvenir', icon: 'souvenir', price: () => t('tool.price', { n: BALANCE.souvenirCost }) },
-  { type: 'atm', label: 'tool.atm', icon: 'atm', price: () => t('tool.price', { n: BALANCE.atmCost }) },
   { type: 'parking', label: 'tool.parking', icon: 'parking', price: () => t('tool.price', { n: BALANCE.parkingCost }) },
   { type: 'keeper', label: 'tool.keeper', icon: 'keeper', price: () => t('tool.price', { n: BALANCE.keeperHireCost }), action: true },
   { type: 'demolish', label: 'tool.demolish', icon: null },
 ];
+
+// The Furniture menu: the garden decorations (one look each: src/render3d/park-scene.js GARDEN) and the cash
+// machine; the Snack menu: its two stands.
+const FURNITURE = ['parkBench', 'trashCan', 'streetLamp', 'pottedPlant', 'shrubClump', 'flowerBox', 'mossRocks', 'atm'];
+const SNACKS = ['waffles', 'grill'];
 
 const NEW_GAME_CONFIRM_MS = 3000;
 const SAVED_BADGE_MS = 1800;
@@ -59,6 +64,7 @@ class UI {
       <div id="panel" class="card"></div>
       <div id="habitats" class="card"></div>
       <div id="decors" class="card"></div>
+      <div id="shop" class="card"></div>
       <div id="toolbar" class="card"></div>
       <div id="hint" class="card" style="display:none"></div>
       <div id="help" class="card">${esc(t('hud.help'))}</div>
@@ -69,7 +75,8 @@ class UI {
     this.el('toolbar').addEventListener('pointerdown', (e) => this.onToolbar(e));
     this.el('habitats').addEventListener('pointerdown', (e) => this.onHabitat(e));
     this.el('decors').addEventListener('pointerdown', (e) => this.onDecor(e));
-    for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'decors', 'objectives']) {
+    this.el('shop').addEventListener('pointerdown', (e) => this.onShop(e));
+    for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'decors', 'shop', 'objectives']) {
       this.el(id).addEventListener('wheel', (e) => e.stopPropagation());
     }
   }
@@ -131,9 +138,15 @@ class UI {
   setTool(tool) {
     this.tool = tool;
     if (this.scene) this.scene.setTool(tool);
-    const DECOR_TOOLS = ['pickDecor', 'decor', 'decoration', 'shelter'];
+    const DECOR_TOOLS = ['pickDecor', 'decor', 'shelter'];
     let active = tool.type === 'enclosure' || tool.type === 'pickHabitat' ? 'enclosure' : tool.type;
     if (DECOR_TOOLS.includes(tool.type)) active = 'decoration';
+    if (['pickFurniture', 'decoration', 'atm'].includes(tool.type)) active = 'furniture';
+    if (tool.type === 'pickSnack') active = 'snack';
+    // the Furniture and Snack menus (they close once something is chosen, like the decorations)
+    const shop = tool.type === 'pickFurniture' || tool.type === 'pickSnack';
+    this.el('shop').classList.toggle('open', shop);
+    if (shop) this.renderShop();
     // the picker closes once a decoration is chosen, so it does not hide the map while placing it
     this.el('decors').classList.toggle('open', tool.type === 'pickDecor');
     for (const b of this.el('decors').querySelectorAll('button')) {
@@ -146,6 +159,9 @@ class UI {
     if (tool.type === 'placeMonster') hint = t('hatchery.pickEnclosure', { habitat: this.habitatNames(tool.habitat).toLowerCase() });
     if (tool.type === 'shelter') hint = t('shelter.hint', { name: t(`shelter.${SHELTERS[tool.family]}`), habitat: this.habitatNames(tool.family).toLowerCase() });
     if (tool.type === 'parking') hint = t('parking.hint');
+    if (tool.type === 'decoration' && tool.look) hint = t('furniture.hint', { name: t(`furniture.${tool.look}`) });
+    if (tool.type === 'atm') hint = t('furniture.hint', { name: t('furniture.atm') });
+    if (tool.type === 'snack' && tool.look) hint = t('furniture.hint', { name: t(`snack.${tool.look}`) });
     if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
     this.hint(hint);
   }
@@ -162,10 +178,38 @@ class UI {
     }
     if (type === 'enclosure') this.setTool({ type: 'pickHabitat' });
     else if (type === 'decoration') this.setTool({ type: 'pickDecor' });
+    else if (type === 'furniture') this.setTool({ type: 'pickFurniture' });
+    else if (type === 'snack') this.setTool({ type: 'pickSnack' });
     else this.setTool({ type });
   }
 
-  // The decoration picker: the garden one (on the grass) and three per habitat (inside the enclosures).
+  // The Furniture or Snack menu: what can be placed, with a picture of its 3D model (a drawing until ready).
+  renderShop() {
+    const snack = this.tool.type === 'pickSnack';
+    const keys = snack ? SNACKS : FURNITURE;
+    this.shopMissing = false;
+    const item = (k) => {
+      const pic = this.view3d?.thingPortrait(k);
+      if (!pic) this.shopMissing = true;
+      const name = snack ? t(`snack.${k}`) : t(`furniture.${k}`);
+      const price = snack ? BALANCE.snackCost : k === 'atm' ? BALANCE.atmCost : BALANCE.decorationCost;
+      const help = snack ? t('snack.help') : k === 'atm' ? t('atm.effect', { n: Math.round((BALANCE.atmSpendBonus - 1) * 100) }) : t('decor.gardenHelp');
+      return `<button data-thing="${k}" title="${esc(help)}"><img src="${pic ?? this.img(snack ? 'snack' : k === 'atm' ? 'atm' : 'decoration')}"><small>${esc(name)}</small><small class="price">${esc(t('tool.price', { n: price }))}</small></button>`;
+    };
+    const html = `<h4>${esc(t(snack ? 'snack.title' : 'furniture.title'))}</h4><div class="items">${keys.map(item).join('')}</div>`;
+    if (this.el('shop').innerHTML !== html) this.el('shop').innerHTML = html;
+  }
+
+  onShop(e) {
+    const btn = e.target.closest('button[data-thing]');
+    if (!btn) return;
+    const k = btn.dataset.thing;
+    if (SNACKS.includes(k)) this.setTool({ type: 'snack', look: k });
+    else if (k === 'atm') this.setTool({ type: 'atm' });
+    else this.setTool({ type: 'decoration', look: k });
+  }
+
+  // The decoration picker: three per habitat (inside the enclosures) and the shelter.
   renderDecorPicker() {
     const item = (id) => `
       <button data-decor="${id}" title="${esc(t('decor.enclosureHelp'))}">
@@ -177,9 +221,6 @@ class UI {
     this.el('decors').innerHTML = `
       <div class="tabs">${tabs}</div>
       <div class="cols">
-        <div class="group"><h4>${esc(t('decor.garden'))}</h4>
-          <button data-garden title="${esc(t('decor.gardenHelp'))}"><img src="${this.img('decoration')}"><small>${esc(t('decor.garden'))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.decorationCost }))}</small></button>
-        </div>
         <div class="group"><h4>${esc(t('shelter.title'))}</h4>
           <button data-shelter="${this.decorFamily}" title="${esc(t('shelter.help'))}"><img src="${this.shelterImg(this.decorFamily)}"><small>${esc(t(`shelter.${SHELTERS[this.decorFamily]}`))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.shelterCost }))}</small></button>
         </div>
@@ -445,7 +486,11 @@ class UI {
         <div class="row">${esc(t('atm.effect', { n: Math.round((BALANCE.atmSpendBonus - 1) * 100) }))}</div>`;
     }
     if (sel.kind === 'building') {
-      return `${close}<h3><img class="portrait" src="${this.img(sel.type)}">${esc(t(`building.${sel.type}`))}</h3>`;
+      // a garden decoration or a snack: the one picked in its menu
+      const look = w.builder.buildings.get(sel.id)?.look;
+      const name = look ? t(sel.type === 'snack' ? `snack.${look}` : `furniture.${look}`) : t(`building.${sel.type}`);
+      const pic = (look && this.view3d?.thingPortrait(look)) || this.img(sel.type);
+      return `${close}<h3><img class="portrait" src="${pic}">${esc(name)}</h3>`;
     }
     return null;
   }
@@ -552,6 +597,7 @@ class UI {
   refresh() {
     this.lastRefresh = performance.now();
     if (!this.scene) return;
+    if (this.shopMissing && this.el('shop').classList.contains('open')) this.renderShop();
     this.setHtml('hud', this.renderHud());
     this.setHtml('objectives', this.renderObjectives());
     const panel = this.renderPanel();
