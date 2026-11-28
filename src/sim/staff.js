@@ -2,10 +2,9 @@ import { centerOf } from './enclosure.js';
 import { BALANCE } from '../config/balance.js';
 import { SPECIES } from '../config/species.js';
 import { findPath, findNearest } from './pathfinding.js';
-import { scare } from './visitors.js';
+import { scare, WALK_SPEED, RUN_SPEED } from './visitors.js';
 
 const MONSTER_SPEED = 1;
-const KEEPER_SPEED = 2.5;
 const SCARE_RADIUS = 2;
 const CATCH_DIST = 0.8;
 
@@ -158,7 +157,7 @@ export function updateKeeper(k, ctx, dt) {
       k.path = findPath(ctx.grid, k.tile, goal, { allowGrass: true }) || [];
       k.goalKey = goalKey;
     }
-    followPath(k, KEEPER_SPEED * dt);
+    followPath(k, RUN_SPEED * dt); // chasing: runs
     return;
   }
 
@@ -170,7 +169,7 @@ export function updateKeeper(k, ctx, dt) {
     const options = ctx.grid.neighbors4(k.tile.tx, k.tile.ty).filter((n) => ctx.grid.isPath(n.tx, n.ty));
     k.path = options.length ? [options[Math.floor(ctx.rng() * options.length)]] : [];
   }
-  followPath(k, (KEEPER_SPEED / 2) * dt);
+  followPath(k, WALK_SPEED * dt);
 }
 
 function followPath(k, budget) {

@@ -522,8 +522,8 @@ vec2 flowUv(vec2 uv) {
       } else if (b.type === 'hatchery') {
         this.placeIncubator(group, cx, cz, b.id);
       } else if (b.type === 'expeditionBase') {
-        // a military tent about 2.5 m tall (the model is very wide for its height: it overhangs its 2 x 2 tiles a little)
-        this.placeModel(group, 'expedition-base', cx, cz, 7, this.faceToPath(b), b.id);
+        // a military tent about 3 m tall on its 3 x 3 tiles (the model is very wide for its height: it overhangs them a little)
+        this.placeModel(group, 'expedition-base', cx, cz, (b.x1 - b.x0 + 1) * T * 1.13, this.faceToPath(b), b.id);
       } else {
         // a garden decoration: one of several props, picked from the building id so it never changes
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;

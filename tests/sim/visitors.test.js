@@ -77,7 +77,7 @@ describe('visitors', () => {
     expect(run(v, ctx, 30, (x) => x.state === 'gone')).not.toBeNull();
   });
 
-  it('re-paths when the path ahead is demolished and still leaves within 30 s', () => {
+  it('re-paths when the path ahead is demolished and still leaves within 80 s', () => {
     const ctx = setup();
     addEnclosure(ctx, 12, 8, 13, 9);
     // detour: y = 12 from x = 4 to x = 12, linked by x = 4 and x = 12 columns
@@ -87,7 +87,7 @@ describe('visitors', () => {
     const v = createVisitor(ctx.entrance);
     run(v, ctx, 2);
     ctx.builder.demolish(8, 10);
-    const t = run(v, ctx, 30, (x) => x.state === 'watching');
+    const t = run(v, ctx, 80, (x) => x.state === 'watching');
     expect(t).not.toBeNull();
     // now cut everything between the visitor and the entrance: it must still get out
     ctx.builder.demolish(4, 11);
@@ -117,7 +117,7 @@ describe('visitors', () => {
     const ctx = setup();
     ctx.builder.placeBuilding('snack', 5, 9);
     const v = createVisitor(ctx.entrance);
-    v.age = 61;
+    v.age = 151; // hungry
     const money = ctx.wallet.money;
     expect(run(v, ctx, 30, (x) => x.ate)).not.toBeNull();
     expect(ctx.wallet.money).toBe(money + 8);

@@ -3,13 +3,17 @@ import { findPath } from './pathfinding.js';
 import { appeal, decorCount } from './monsters.js';
 import { HABITAT_APPEAL } from '../config/species.js';
 
-const WALK_SPEED = 1.5;
-const FLEE_SPEED = 3;
+// tiles / s (2.5 m per tile in the 3D view): a brisk walk, 1.5 m/s, and a run, 3.4 m/s, matching the stride of
+// their walk and run animations (ANIM_FPS.person, src/render/sprites.js), so their feet do not slide
+export const WALK_SPEED = 0.6;
+export const RUN_SPEED = 1.35;
+const FLEE_SPEED = RUN_SPEED;
 const WATCH_SEC = 5;
 const SHOP_SEC = 2;
 const MAX_TARGETS = 3;
-const MAX_AGE_SEC = 120;
-const HUNGRY_AFTER_SEC = 60;
+// (the walks between two enclosures take that long: they used to walk 2.5 times faster)
+const MAX_AGE_SEC = 300;
+const HUNGRY_AFTER_SEC = 150;
 const STUCK_GIVE_UP_SEC = 20;
 
 let nextVisitorId = 1;

@@ -79,3 +79,42 @@ describe('save / load', () => {
     expect(() => deserializeWorld({ version: 999 })).toThrow();
   });
 });
+
+describe('older saved games', () => {
+  // an expedition base of an older game: 2 x 2 tiles
+  const shrinkBase = (data) => {
+    const b = data.builder.buildings.find((x) => x.type === 'expeditionBase');
+    for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
+      if (x > b.x0 + 1 || y > b.y0 + 1) data.grid.tiles[y * data.grid.w + x][1] = null;
+    }
+    b.x1 = b.x0 + 1; b.y1 = b.y0 + 1;
+    return { ...b }; // a copy: the loaded game uses the same object
+  };
+
+  it('the 2 x 2 expedition base grows to 3 x 3 in place when the tiles around are free', () => {
+    const data = serializeWorld(createInitialWorld(3));
+    const old = shrinkBase(data);
+    const w = deserializeWorld(data);
+    const b = w.builder.buildings.get(old.id);
+    expect([b.x1 - b.x0, b.y1 - b.y0]).toEqual([2, 2]);
+    expect(b.x0 <= old.x0 && b.y0 <= old.y0).toBe(true);
+    for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) expect(w.grid.getTile(x, y).occupant).toBe(b.id);
+  });
+
+  it('with no room around, it moves to the nearest free 3 x 3 spot', () => {
+    const data = serializeWorld(createInitialWorld(3));
+    const old = shrinkBase(data);
+    // paths all around it
+    for (const [x, y] of [[old.x0 + 2, old.y0], [old.x0 + 2, old.y0 + 1], [old.x0, old.y0 + 2], [old.x0 + 1, old.y0 + 2], [old.x0 + 2, old.y0 + 2]]) {
+      data.grid.tiles[y * data.grid.w + x][0] = 'path';
+    }
+    const w = deserializeWorld(data);
+    const b = w.builder.buildings.get(old.id);
+    expect([b.x1 - b.x0, b.y1 - b.y0]).toEqual([2, 2]);
+    expect(b.x0 !== old.x0 || b.y0 !== old.y0).toBe(true); // moved
+    for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) expect(w.grid.getTile(x, y).ground).toBe('grass');
+    let count = 0;
+    for (const t of w.grid.tiles) if (t.occupant === b.id) count++;
+    expect(count).toBe(9);
+  });
+});

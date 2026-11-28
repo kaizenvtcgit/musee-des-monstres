@@ -36,7 +36,8 @@ const ANIM_FPS = {
     walk: 8, idle: 3, look: 3, stretch: 12 / 3.5, chestbeat: 5, slam: 6, threat: 4, sleep: 8 / 5, wakeup: 4, sitdown: 4, shake: 5,
   },
   // every "person-..." animation (Quaternius characters)
-  person: { walk: 7.2, run: 8, idle: 2.88, wave: 5.76 },
+  // a step cycle in 1.05 s walking (1.57 m: 1.5 m/s), in 0.65 s running (2.2 m: 3.4 m/s); see src/sim/visitors.js
+  person: { walk: 12 / 1.05, run: 8 / 0.65, idle: 2.88, wave: 5.76 },
 };
 
 const isPerson = (name) => name.startsWith('person-');

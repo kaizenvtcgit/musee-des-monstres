@@ -74,6 +74,8 @@ export function deserializeWorld(data) {
   w.expeditionBase.active = data.expedition;
   w.hatchery.eggs = data.hatchery.eggs;
   w.hatchery.stored = data.hatchery.storedIds.map((id) => w.monsters.get(id)).filter(Boolean);
+  // buildings that are bigger now (the expedition base: 3 x 3)
+  for (const b of w.builder.buildings.values()) if (b.fixed) w.builder.growBuilding(b);
 
   reserveMonsterIds(maxId(data.monsters));
   reserveVisitorIds(maxId(data.visitors));

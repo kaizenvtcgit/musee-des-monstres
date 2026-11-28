@@ -7,7 +7,7 @@ const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
   snack: { size: 1, price: BALANCE.snackCost },
   souvenir: { size: 1, price: BALANCE.souvenirCost },
-  expeditionBase: { size: 2, price: 0 },
+  expeditionBase: { size: 3, price: 0 }, // a big military tent (older saved games: 2 x 2, see growBuilding)
   hatchery: { size: 2, price: 0 },
 };
 
@@ -246,6 +246,39 @@ export class Builder {
 
   touchesPath(id) {
     return this.accessTiles(id).length > 0;
+  }
+
+  // A fixed building of an older saved game smaller than it is now (the expedition base was 2 x 2) grows to its
+  // size: in place if the tiles around are free, otherwise it moves to the nearest free spot. Kept as it is
+  // if there is no room anywhere. Returns true if it changed.
+  growBuilding(b) {
+    const n = BUILDING_DEFS[b.type]?.size;
+    if (!n || b.x1 - b.x0 + 1 >= n) return false;
+    const freeFor = (x0, y0) => {
+      if (!this.grid.inBounds(x0, y0) || !this.grid.inBounds(x0 + n - 1, y0 + n - 1)) return false;
+      for (let y = y0; y < y0 + n; y++) {
+        for (let x = x0; x < x0 + n; x++) {
+          const t = this.grid.getTile(x, y);
+          if (t.occupant === b.id) continue;
+          if (!this.grid.isFree(x, y) || this.isBlocked(x, y)) return false;
+        }
+      }
+      return true;
+    };
+    // the squares that contain it first, then the others from the nearest
+    let spot = null, best = Infinity;
+    for (let y0 = 0; y0 < this.grid.h; y0++) {
+      for (let x0 = 0; x0 < this.grid.w; x0++) {
+        const covers = x0 <= b.x0 && y0 <= b.y0 && x0 + n - 1 >= b.x1 && y0 + n - 1 >= b.y1;
+        const d = covers ? -1 : Math.hypot(x0 - b.x0, y0 - b.y0);
+        if (d < best && freeFor(x0, y0)) { best = d; spot = { x0, y0 }; }
+      }
+    }
+    if (!spot) return false;
+    this.#fillRect(b.x0, b.y0, b.x1, b.y1, null);
+    Object.assign(b, { x0: spot.x0, y0: spot.y0, x1: spot.x0 + n - 1, y1: spot.y0 + n - 1 });
+    this.#fillRect(b.x0, b.y0, b.x1, b.y1, b.id);
+    return true;
   }
 
   #rectFree(x0, y0, x1, y1) {
