@@ -516,9 +516,12 @@ vec2 flowUv(vec2 uv) {
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
         // (the waffle stand's counter is on its +z side, the grill's on its +x side)
         const [model, front] = n % 2 ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
-        this.placeModel(group, model, cx, cz, 2.4, this.faceToPath(b) + front, b.id);
+        // a real kiosk next to the visitors: counter about waist high, the edge of its roof about 2.3 m up
+        // (3.1 m across: it overhangs its tile a little)
+        this.placeModel(group, model, cx, cz, 3.1, this.faceToPath(b) + front, b.id);
       } else if (b.type === 'souvenir') {
-        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 2.6, this.faceToPath(b), b.id);
+        // the same: the edge of its roof about 2.4 m up, its dragon on top about 3.8 m
+        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 3.25, this.faceToPath(b), b.id);
       } else if (b.type === 'hatchery') {
         this.placeIncubator(group, cx, cz, b.id);
       } else if (b.type === 'expeditionBase') {
