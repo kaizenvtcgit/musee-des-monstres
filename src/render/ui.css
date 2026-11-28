@@ -73,6 +73,18 @@ button small { display: block; font-size: 11px; color: var(--muted); }
 }
 #habitats.open { display: flex; }
 
+#stands {
+  position: absolute; bottom: 104px; left: 50%; transform: translateX(-50%);
+  display: none; flex-direction: column; gap: 6px; padding: 8px 10px;
+}
+#stands.open { display: flex; }
+#stands h4 { margin: 0; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; text-align: center; }
+#stands .cols { display: flex; gap: 8px; }
+#stands button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; width: 130px; }
+#stands img, #stands .pic { width: 84px; height: 84px; object-fit: contain; display: block; }
+#stands small { font-size: 12px; line-height: 1.15; text-align: center; }
+#stands small.price { color: var(--muted); font-size: 11px; }
+
 #decors {
   position: absolute; bottom: 104px; left: 50%; transform: translateX(-50%);
   display: none; gap: 10px; padding: 8px 10px; align-items: flex-start;
@@ -124,7 +136,7 @@ button small { display: block; font-size: 11px; color: var(--muted); }
 /* phones and narrow windows: everything fits the width, the toolbar and pickers scroll sideways, the
    sheet of the selection opens at the bottom, above the toolbar */
 @media (max-width: 700px) {
-  #hud, #toolbar, #habitats, #decors, #panel { box-sizing: border-box; }
+  #hud, #toolbar, #habitats, #decors, #stands, #panel { box-sizing: border-box; }
   #hud { top: 6px; width: calc(100% - 12px); flex-wrap: wrap; justify-content: center; gap: 4px 8px; padding: 5px 6px; }
   #hud button { white-space: nowrap; }
   #hud .saved { display: none; }
@@ -135,7 +147,7 @@ button small { display: block; font-size: 11px; color: var(--muted); }
   #objectives { display: none; }
   #toolbar { bottom: 6px; max-width: calc(100% - 12px); overflow-x: auto; justify-content: flex-start; padding: 6px; gap: 4px; }
   #toolbar button { min-width: 58px; font-size: 11px; padding: 4px 5px; flex: none; }
-  #habitats, #decors { bottom: 84px; max-width: calc(100% - 12px); overflow-x: auto; }
+  #habitats, #decors, #stands { bottom: 84px; max-width: calc(100% - 12px); overflow-x: auto; }
   #panel { top: auto; bottom: 84px; left: 6px; right: 6px; width: auto; max-height: 42vh; overflow-y: auto; }
   #toasts { top: auto; bottom: 150px; }
 }

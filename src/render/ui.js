@@ -3,6 +3,7 @@ import { t } from '../i18n/index.js';
 import { BALANCE } from '../config/balance.js';
 import { SPECIES, LOCATIONS, HABITAT_FAMILIES, offeredHabitatsOfFamily } from '../config/species.js';
 import { ENCLOSURE_DECOR, decorForHabitat, SHELTERS } from '../config/decor.js';
+import { SNACK_STANDS, standOf } from '../config/stands.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { realKey } from './sprites.js';
 import { monsterTextureKey } from './textures.js';
@@ -57,6 +58,7 @@ class UI {
       <div id="panel" class="card"></div>
       <div id="habitats" class="card"></div>
       <div id="decors" class="card"></div>
+      <div id="stands" class="card"></div>
       <div id="toolbar" class="card"></div>
       <div id="hint" class="card" style="display:none"></div>
       <div id="help" class="card">${esc(t('hud.help'))}</div>
@@ -67,7 +69,8 @@ class UI {
     this.el('toolbar').addEventListener('pointerdown', (e) => this.onToolbar(e));
     this.el('habitats').addEventListener('pointerdown', (e) => this.onHabitat(e));
     this.el('decors').addEventListener('pointerdown', (e) => this.onDecor(e));
-    for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'decors', 'objectives']) {
+    this.el('stands').addEventListener('pointerdown', (e) => this.onStand(e));
+    for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'decors', 'stands', 'objectives']) {
       this.el(id).addEventListener('wheel', (e) => e.stopPropagation());
     }
   }
@@ -132,6 +135,10 @@ class UI {
     const DECOR_TOOLS = ['pickDecor', 'decor', 'decoration', 'shelter'];
     let active = tool.type === 'enclosure' || tool.type === 'pickHabitat' ? 'enclosure' : tool.type;
     if (DECOR_TOOLS.includes(tool.type)) active = 'decoration';
+    if (tool.type === 'pickStand') active = 'snack';
+    // the stand picker, open until a stand is chosen
+    this.el('stands').classList.toggle('open', tool.type === 'pickStand');
+    if (tool.type === 'pickStand') this.renderStandPicker();
     // the picker closes once a decoration is chosen, so it does not hide the map while placing it
     this.el('decors').classList.toggle('open', tool.type === 'pickDecor');
     for (const b of this.el('decors').querySelectorAll('button')) {
@@ -144,6 +151,7 @@ class UI {
     if (tool.type === 'placeMonster') hint = t('hatchery.pickEnclosure', { habitat: this.habitatNames(tool.habitat).toLowerCase() });
     if (tool.type === 'shelter') hint = t('shelter.hint', { name: t(`shelter.${SHELTERS[tool.family]}`), habitat: this.habitatNames(tool.family).toLowerCase() });
     if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
+    if (tool.type === 'snack' && tool.variant) hint = t('stand.hint', { name: t(`stand.${tool.variant}`) });
     this.hint(hint);
   }
 
@@ -159,7 +167,26 @@ class UI {
     }
     if (type === 'enclosure') this.setTool({ type: 'pickHabitat' });
     else if (type === 'decoration') this.setTool({ type: 'pickDecor' });
+    else if (type === 'snack') this.setTool({ type: 'pickStand' });
     else this.setTool({ type });
+  }
+
+  // The snack stand picker: each stand with its picture (its 3D model), its name and its price.
+  renderStandPicker() {
+    const pics = Object.values(SNACK_STANDS).map((s) => this.view3d?.park?.portrait(s.model, 120, 120) ?? null);
+    this.el('stands').innerHTML = `<h4>${esc(t('stand.pick'))}</h4><div class="cols">${Object.values(SNACK_STANDS).map((s, i) => `
+      <button data-stand="${s.id}">
+        ${pics[i] ? `<img src="${pics[i]}">` : '<span class="pic"></span>'}
+        <small>${esc(t(`stand.${s.id}`))}</small><small class="price">${esc(t('tool.price', { n: BALANCE.snackCost }))}</small>
+      </button>`).join('')}</div>`;
+    // the pictures are drawn in the background: show them as soon as they are ready
+    clearTimeout(this.standPicTimer);
+    if (pics.some((p) => !p)) this.standPicTimer = setTimeout(() => { if (this.tool?.type === 'pickStand') this.renderStandPicker(); }, 300);
+  }
+
+  onStand(e) {
+    const btn = e.target.closest('button[data-stand]');
+    if (btn) this.setTool({ type: 'snack', variant: btn.dataset.stand });
   }
 
   // The decoration picker: the garden one (on the grass) and three per habitat (inside the enclosures).
@@ -425,6 +452,14 @@ class UI {
         ${eggs || (h.stored.length ? '' : `<div class="row">${esc(t('hatchery.empty'))}</div>`)}
         <div class="row">${esc(t('hatchery.stored', { n: h.stored.length, max: BALANCE.hatcheryCapacity }))}</div>
         <div class="list">${stored}</div>`;
+    }
+
+    if (sel.kind === 'building' && sel.type === 'snack') {
+      const b = w.builder.buildings.get(sel.id);
+      const stand = b ? standOf(b) : null;
+      const pic = (stand && this.view3d?.park?.portrait(stand.model)) || this.img('snack');
+      return `${close}<h3><img class="portrait" src="${pic}">${esc(stand ? t(`stand.${stand.id}`) : t('building.snack'))}</h3>
+        <div class="row">${esc(t('building.snack'))}</div>`;
     }
 
     if (sel.kind === 'building') {

@@ -14,6 +14,7 @@ import { SHELTER_MODEL_SCALE } from '../render/shelterpath.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
+import { standOf } from '../config/stands.js';
 import { drawBubble } from '../render/bubbles.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
@@ -512,10 +513,8 @@ vec2 flowUv(vec2 uv) {
     for (const b of this.world.builder.buildings.values()) {
       const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
       if (b.type === 'snack') {
-        // two stands, picked from the building id: the Kraken's waffles or the Dragon's grill
-        const n = Number(String(b.id).replace(/\D/g, '')) || 0;
-        // (the waffle stand's counter is on its +z side, the grill's on its +x side)
-        const [model, front] = n % 2 ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
+        // the stand the player chose: the Kraken's waffles or the Dragon's grill (src/config/stands.js)
+        const { model, front } = standOf(b);
         // a real kiosk next to the visitors: counter about waist high, the edge of its roof about 2.3 m up
         // (3.1 m across: it overhangs its tile a little)
         this.placeModel(group, model, cx, cz, 3.1, this.faceToPath(b) + front, b.id);

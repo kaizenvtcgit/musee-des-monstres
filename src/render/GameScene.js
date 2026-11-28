@@ -421,7 +421,7 @@ export class GameScene extends Phaser.Scene {
       case 'decoration':
       case 'snack':
       case 'souvenir':
-        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty));
+        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty, { variant: this.tool.variant }));
         break;
       case 'demolish':
         this.report(b.demolish(tile.tx, tile.ty));

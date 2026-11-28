@@ -87,6 +87,10 @@ export const fr = {
   'building.hatchery': 'Couveuse',
   'building.decoration': 'Décoration',
   'building.snack': 'Snack',
+  'stand.pick': 'Quel stand ?',
+  'stand.dragonGrill': 'La Braise du Dragon',
+  'stand.krakenWaffles': 'Les Gaufres du Kraken',
+  'stand.hint': 'Clique près d’une allée pour placer : {name}',
   'building.souvenir': 'Boutique de souvenirs',
 
   'expedition.choose': 'Choisis une destination',

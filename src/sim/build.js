@@ -170,7 +170,9 @@ export class Builder {
     const price = opts.free ? 0 : def.price;
     if (!this.wallet.spend(price)) return fail('noMoney');
     const id = `${type}${this.nextId++}`;
-    this.buildings.set(id, { id, type, x0: tx, y0: ty, x1, y1, price, fixed: !!opts.fixed });
+    const b = { id, type, x0: tx, y0: ty, x1, y1, price, fixed: !!opts.fixed };
+    if (opts.variant) b.variant = opts.variant; // which snack stand (src/config/stands.js)
+    this.buildings.set(id, b);
     this.#fillRect(tx, ty, x1, y1, id);
     return { ok: true, id };
   }
