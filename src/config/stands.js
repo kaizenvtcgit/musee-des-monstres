@@ -2,7 +2,7 @@
 // model: its 3D model (src/assets/3d/<model>.glb.json); front: turn (radians) that brings its counter to the
 // model's +z side, which the 3D view then turns toward the nearest path.
 export const SNACK_STANDS = {
-  dragonGrill: { id: 'dragonGrill', model: 'stand-dragon-grill', front: -Math.PI / 2 },
+  dragonGrill: { id: 'dragonGrill', model: 'stand-dragon-grill', front: 0 }, // its sign and dragon-head grill on +z
   krakenWaffles: { id: 'krakenWaffles', model: 'stand-kraken-waffles', front: 0 },
 };
 
