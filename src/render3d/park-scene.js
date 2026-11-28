@@ -16,7 +16,7 @@ import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
 import { drawBubble } from '../render/bubbles.js';
 import { Parking3D } from './parking3d.js';
-import { antiTile, lavaChannels, pathFringe, wallShade, groundDetails } from './grounds.js';
+import { antiTile, lavaChannels, lavaGeometry, pathFringe, wallShade, groundDetails } from './grounds.js';
 import { instanceGroup, chunkedInstances, place, prepareDecor, prepareProps } from './scenery.js';
 
 // models: .glb files wrapped in .json (scripts/3d/glb-to-json.mjs) so any host serves them
@@ -310,8 +310,14 @@ export class ParkScene {
       const e = tile && tile.occupant && builder.enclosures.get(tile.occupant);
       return !!e && WATERS[e.habitat] !== undefined;
     };
+    // (and under the lava, whose channels are dug below it)
+    const isLava = (tx, ty) => {
+      const tile = grid.inBounds(tx, ty) && grid.getTile(tx, ty);
+      const e = tile && tile.occupant && builder.enclosures.get(tile.occupant);
+      return !!e && e.habitat === 'lava';
+    };
     const lawn = [];
-    for (let ty = -RING; ty < grid.h + RING; ty++) for (let tx = -RING; tx < grid.w + RING; tx++) if (!isWater(tx, ty)) lawn.push({ tx, ty });
+    for (let ty = -RING; ty < grid.h + RING; ty++) for (let tx = -RING; tx < grid.w + RING; tx++) if (!isWater(tx, ty) && !isLava(tx, ty)) lawn.push({ tx, ty });
     this.lawnMat ??= this.groundMaterial('grass');
     const lawnMesh = new THREE.Mesh(this.quads(lawn, 0, GROUNDS.grass.size), this.lawnMat);
     lawnMesh.receiveShadow = true;
@@ -381,7 +387,8 @@ export class ParkScene {
       }
       if (!GROUNDS[k]) continue;
       if (!this.mats.has(k)) this.mats.set(k, this.groundMaterial(k));
-      const mesh = new THREE.Mesh(this.quads(tiles, 0.015, GROUNDS[k].size), this.mats.get(k));
+      const geo = k === 'lava' ? lavaGeometry(this.world, T, tiles, GROUNDS[k].size) : this.quads(tiles, 0.015, GROUNDS[k].size);
+      const mesh = new THREE.Mesh(geo, this.mats.get(k));
       mesh.receiveShadow = true;
       group.add(mesh);
     }

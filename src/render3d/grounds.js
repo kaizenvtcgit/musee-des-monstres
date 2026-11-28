@@ -236,17 +236,104 @@ export function groundDetails(world, T) {
 
 // ---------------------------------------------------------------- lava in channels
 
+// Where the lava runs (shared by the vertex shader, for the relief, and the fragment shader, for the look).
+const LAVA_FN = `
+float lavaFbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += a * gNoise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+  return v;
+}
+// x: distance (in noise) to the middle of the nearest channel, y: the pools' noise (a pool above 0.68)
+vec2 lavaField(vec2 xz) {
+  vec2 p = xz * 0.09;
+  p += 1.1 * vec2(lavaFbm(p + 3.1), lavaFbm(p + 7.7));
+  float f = lavaFbm(p);
+  return vec2(min(abs(f - 0.5), abs(f - 0.36) * 2.2), lavaFbm(xz * 0.05 + 11.0)); // a main river, thinner branches
+}
+// x: lava (1 in the channels), y: the thin glowing rim around them, z: the hot middle of the channels
+vec3 lavaMask(vec2 xz) {
+  vec2 f = lavaField(xz);
+  float m = max(1.0 - smoothstep(0.03, 0.04, f.x), smoothstep(0.67, 0.69, f.y));
+  float rim = max(1.0 - smoothstep(0.04, 0.052, f.x), smoothstep(0.655, 0.67, f.y)) - m;
+  float hot = max(1.0 - smoothstep(0.0, 0.03, f.x), smoothstep(0.69, 0.74, f.y));
+  return vec3(m, max(rim, 0.0), hot);
+}
+// the height of the ground (m): the lava at the bottom of its channels, banks sloping up to bumpy rock
+float lavaHeight(vec2 xz) {
+  vec2 f = lavaField(xz);
+  float bank = min(smoothstep(0.034, 0.085, f.x), 1.0 - smoothstep(0.62, 0.68, f.y));
+  float rock = -0.04 + 0.2 * lavaFbm(xz * 0.42 + 5.0) + 0.05 * gNoise(xz * 2.3); // about the monsters' feet
+  return mix(-0.42, rock, bank);
+}
+`;
+
+// The lava ground's geometry: each tile cut in small squares (so it can take the relief), and on each corner how
+// far it is from the enclosure's edge (`aEdge`, 0 at the walls, 1 from 1 m in: the relief fades out at the walls).
+export function lavaGeometry(world, T, tiles, size, y = 0.015) {
+  const { grid } = world;
+  const N = 10, step = T / N;
+  const same = (tx, ty, occ) => grid.inBounds(tx, ty) && grid.getTile(tx, ty).occupant === occ;
+  const pos = [], uv = [], edge = [], idx = [];
+  for (const { tx, ty } of tiles) {
+    const occ = grid.getTile(tx, ty).occupant;
+    const open = { l: same(tx - 1, ty, occ), r: same(tx + 1, ty, occ), u: same(tx, ty - 1, occ), d: same(tx, ty + 1, occ) };
+    const x0 = (tx - 0.5) * T, z0 = (ty - 0.5) * T, base = pos.length / 3;
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) {
+        const lx = i * step, lz = j * step, x = x0 + lx, z = z0 + lz;
+        let dist = 9;
+        if (!open.l) dist = Math.min(dist, lx);
+        if (!open.r) dist = Math.min(dist, T - lx);
+        if (!open.u) dist = Math.min(dist, lz);
+        if (!open.d) dist = Math.min(dist, T - lz);
+        pos.push(x, y, z);
+        uv.push(x / size, -z / size);
+        edge.push(Math.min(1, Math.max(0, (dist - 0.15) / 0.9)));
+      }
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const a = base + j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aEdge', new THREE.Float32BufferAttribute(edge, 1));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length).map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  g.boundingSphere.radius += 1;
+  return g;
+}
+
 // The lava ground: dark volcanic rock (`rock`, `rockN`), the molten lava only in winding channels and a few pools
-// (where a wide warped noise crosses its middle value), slowly flowing (`time`: the shared clock, in seconds),
-// with a glowing rim at the edge of the rock. The material's map / normalMap / emissiveMap are the lava's.
+// (where a wide warped noise crosses its middle value), sunk below the rock, slowly flowing (`time`: the shared
+// clock, in seconds), with a glowing rim at the edge of the rock. The material's map / normalMap / emissiveMap are
+// the lava's. Its mesh is a lavaGeometry (the relief is made in the vertex shader).
 export function lavaChannels(mat, time, rock, rockN) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uFlowTime = time;
     sh.uniforms.uRockMap = { value: rock };
     sh.uniforms.uRockN = { value: rockN };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundXZ = (modelMatrix * vec4(position, 1.0)).xz;');
+      .replace('#include <common>', `#include <common>
+attribute float aEdge;
+varying vec2 vGroundXZ;
+${NOISE}
+${LAVA_FN}`)
+      .replace('#include <beginnormal_vertex>', `
+  vGroundXZ = (modelMatrix * vec4(position, 1.0)).xz;
+  float lavaH = lavaHeight(vGroundXZ) * aEdge;
+  float lavaHx = lavaHeight(vGroundXZ + vec2(0.12, 0.0)) * aEdge;
+  float lavaHz = lavaHeight(vGroundXZ + vec2(0.0, 0.12)) * aEdge;
+  vec3 objectNormal = normalize(vec3(-(lavaHx - lavaH) / 0.12, 1.0, -(lavaHz - lavaH) / 0.12));
+  #ifdef USE_TANGENT
+    vec3 objectTangent = vec3( tangent.xyz );
+  #endif`)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += lavaH;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 varying vec2 vGroundXZ;
@@ -254,28 +341,12 @@ uniform float uFlowTime;
 uniform sampler2D uRockMap;
 uniform sampler2D uRockN;
 ${NOISE}
-float lavaFbm(vec2 p) {
-  float v = 0.0, a = 0.5;
-  for (int i = 0; i < 4; i++) { v += a * gNoise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
-  return v;
-}
+${LAVA_FN}
 vec2 flowUv(vec2 uv) {
   float t = uFlowTime;
   return uv + vec2(t * 0.018, t * 0.011)
     + 0.035 * vec2(sin(uv.y * 5.3 + t * 0.55), cos(uv.x * 4.7 + t * 0.47))
     + 0.012 * vec2(sin(uv.y * 13.0 - t * 0.9), sin(uv.x * 11.0 + t * 0.8));
-}
-// x: lava (1 in the channels), y: the thin glowing rim around them, z: the hot middle of the channels
-vec3 lavaMask(vec2 xz) {
-  vec2 p = xz * 0.09;
-  p += 1.1 * vec2(lavaFbm(p + 3.1), lavaFbm(p + 7.7));
-  float f = lavaFbm(p);
-  float d = min(abs(f - 0.5), abs(f - 0.36) * 2.2); // a main river and thinner branches
-  float pf = lavaFbm(xz * 0.05 + 11.0);
-  float m = max(1.0 - smoothstep(0.03, 0.04, d), smoothstep(0.67, 0.69, pf));
-  float rim = max(1.0 - smoothstep(0.04, 0.052, d), smoothstep(0.655, 0.67, pf)) - m;
-  float hot = max(1.0 - smoothstep(0.0, 0.03, d), smoothstep(0.69, 0.74, pf));
-  return vec3(m, max(rim, 0.0), hot);
 }
 vec3 lavaMk;`)
       .replace('#include <map_fragment>', `
