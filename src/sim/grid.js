@@ -2,7 +2,7 @@ export class Grid {
   constructor(w, h) {
     this.w = w;
     this.h = h;
-    this.tiles = Array.from({ length: w * h }, () => ({ ground: 'grass', occupant: null }));
+    this.tiles = Array.from({ length: w * h }, () => ({ ground: 'grass', occupant: null, bridge: null }));
     this.version = 0; // bumped on every change, lets the renderer redraw lazily
   }
 
@@ -24,6 +24,24 @@ export class Grid {
     this.version++;
   }
 
+  // A bridge (its id, or null) over an enclosure tile: the tile stays the enclosure's (the monsters
+  // walk under it) and becomes walkable for visitors and keepers (src/sim/bridge.js).
+  setBridge(tx, ty, id) {
+    this.getTile(tx, ty).bridge = id;
+    this.version++;
+  }
+
+  isBridge(tx, ty) {
+    const t = this.getTile(tx, ty);
+    return !!t && !!t.bridge;
+  }
+
+  // Where people walk: a path tile with nothing on it, or a bridge.
+  isWalkable(tx, ty) {
+    const t = this.getTile(tx, ty);
+    return !!t && (!!t.bridge || (t.ground === 'path' && t.occupant === null));
+  }
+
   isFree(tx, ty) {
     const t = this.getTile(tx, ty);
     return !!t && t.ground === 'grass' && t.occupant === null;
@@ -31,7 +49,7 @@ export class Grid {
 
   isPath(tx, ty) {
     const t = this.getTile(tx, ty);
-    return !!t && t.ground === 'path';
+    return !!t && (t.ground === 'path' || !!t.bridge);
   }
 
   neighbors4(tx, ty) {

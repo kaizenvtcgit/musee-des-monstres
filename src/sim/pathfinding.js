@@ -8,6 +8,7 @@ export function findPath(grid, from, to, { allowGrass = false } = {}) {
   const walkable = (x, y) => {
     if (key(x, y) === goal) return true;
     const t = grid.getTile(x, y);
+    if (t?.bridge) return true;
     if (!t || t.occupant !== null) return false;
     return allowGrass || t.ground === 'path';
   };
@@ -37,7 +38,8 @@ export function findNearest(grid, from, isGoal) {
     const cur = queue[i];
     for (const n of grid.neighbors4(cur.tx, cur.ty)) {
       const k = key(n.tx, n.ty);
-      if (prev.has(k) || grid.getTile(n.tx, n.ty).occupant !== null) continue;
+      const t = grid.getTile(n.tx, n.ty);
+      if (prev.has(k) || (t.occupant !== null && !t.bridge)) continue;
       prev.set(k, key(cur.tx, cur.ty));
       if (isGoal(n.tx, n.ty)) return rebuild(prev, k, grid.w);
       queue.push(n);

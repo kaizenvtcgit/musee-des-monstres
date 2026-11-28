@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../../src/sim/grid.js';
-import { findPath } from '../../src/sim/pathfinding.js';
+import { findPath, findNearest } from '../../src/sim/pathfinding.js';
 
 function line(g, x0, x1, y) {
   for (let x = x0; x <= x1; x++) g.setGround(x, y, 'path');
@@ -49,5 +49,33 @@ describe('findPath', () => {
     const g = new Grid(5, 5);
     g.setOccupant(4, 4, 'monster-home');
     expect(findPath(g, { tx: 0, ty: 0 }, { tx: 4, ty: 4 }, { allowGrass: true })).not.toBeNull();
+  });
+});
+
+describe('bridges', () => {
+  function crossing(withBridge) {
+    const g = new Grid(10, 10);
+    line(g, 0, 1, 0);
+    for (let x = 2; x <= 4; x++) {
+      g.setOccupant(x, 0, 'enc1');
+      if (withBridge) g.setBridge(x, 0, 'brg1');
+    }
+    line(g, 5, 5, 0);
+    for (let x = 0; x <= 5; x++) g.setOccupant(x, 1, 'wall'); // no way around
+    return g;
+  }
+  it('findPath crosses a bridge over an enclosure', () => {
+    const p = findPath(crossing(true), { tx: 0, ty: 0 }, { tx: 5, ty: 0 });
+    expect(p).toHaveLength(5);
+    expect(p.slice(1, 4).map((c) => c.tx)).toEqual([2, 3, 4]);
+    expect(findPath(crossing(false), { tx: 0, ty: 0 }, { tx: 5, ty: 0 })).toBeNull();
+  });
+  it('findNearest reaches a bridge tile', () => {
+    const g = new Grid(10, 10);
+    g.setOccupant(3, 3, 'enc1');
+    g.setBridge(3, 3, 'brg1');
+    g.setOccupant(4, 3, 'enc1');
+    const p = findNearest(g, { tx: 5, ty: 3 }, (x, y) => g.isPath(x, y));
+    expect(p.at(-1)).toEqual({ tx: 3, ty: 3 });
   });
 });

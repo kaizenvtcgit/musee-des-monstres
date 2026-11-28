@@ -203,6 +203,7 @@ function canEnter(v, ctx, tile) {
   const t = ctx.grid.getTile(tile.tx, tile.ty);
   if (!t) return false;
   if (tile.tx === v.target.tile.tx && tile.ty === v.target.tile.ty && v.target.kind === 'exit') return t.occupant === null;
+  if (t.bridge) return true;
   if (t.occupant !== null) return false;
   return v.grass || t.ground === 'path';
 }

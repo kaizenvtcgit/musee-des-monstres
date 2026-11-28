@@ -27,7 +27,7 @@ export function serializeWorld(w) {
     escapeTimes: [...w.escapeTimes],
     completedObjectives: [...w.completedObjectives],
     wallet: { money: w.wallet.money, totalEarned: w.wallet.totalEarned },
-    grid: { w: w.grid.w, h: w.grid.h, tiles: w.grid.tiles.map((t) => [t.ground, t.occupant]) },
+    grid: { w: w.grid.w, h: w.grid.h, tiles: w.grid.tiles.map((t) => [t.ground, t.occupant, t.bridge ?? null]) },
     builder: {
       nextId: w.builder.nextId,
       enclosures: clone([...w.builder.enclosures.values()]),
@@ -63,7 +63,7 @@ export function deserializeWorld(data) {
 
   // the grid, the builder maps and the entity lists are shared with w.ctx: fill them in place
   if (data.grid.w !== w.grid.w || data.grid.h !== w.grid.h) throw new Error('Wrong map size');
-  data.grid.tiles.forEach(([ground, occupant], i) => Object.assign(w.grid.tiles[i], { ground, occupant }));
+  data.grid.tiles.forEach(([ground, occupant, bridge], i) => Object.assign(w.grid.tiles[i], { ground, occupant, bridge: bridge ?? null }));
   w.grid.version++;
   w.builder.nextId = data.builder.nextId;
   for (const e of data.builder.enclosures) w.builder.enclosures.set(e.id, e);
