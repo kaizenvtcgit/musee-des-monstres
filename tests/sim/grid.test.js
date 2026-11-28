@@ -1,21 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tileToScreen, screenToTile } from '../../src/sim/iso.js';
 import { Grid } from '../../src/sim/grid.js';
-import { createRng } from '../../src/sim/rng.js';
-
-describe('iso', () => {
-  it('screenToTile inverts tileToScreen', () => {
-    const rng = createRng(7);
-    for (let i = 0; i < 20; i++) {
-      const tx = Math.floor(rng() * 40), ty = Math.floor(rng() * 40);
-      const { x, y } = tileToScreen(tx, ty);
-      expect(screenToTile(x, y)).toEqual({ tx, ty });
-    }
-  });
-  it('tile center formula', () => {
-    expect(tileToScreen(2, 1)).toEqual({ x: 32, y: 48 });
-  });
-});
 
 describe('Grid', () => {
   it('bounds', () => {

@@ -7,6 +7,7 @@ export const fr = {
   'hud.speed.pause': 'Pause',
   'sound.mute': 'Couper le son',
   'visit.button': '🚶 Marche à pied',
+  'view3d.noWebgl': 'Ce navigateur ne peut pas afficher la 3D (WebGL). Essayez un navigateur récent, ou activez l’accélération matérielle.',
   'visit.button.help': 'Se promener dans le musée comme un visiteur',
   'view.top': '🗺️ Vue du dessus',
   'view.top.help': 'Revenir à la vue du dessus du parc',

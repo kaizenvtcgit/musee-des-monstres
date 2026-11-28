@@ -14,11 +14,10 @@ import * as THREE from 'three';
 import { ParkScene, T, RING } from './park-scene.js';
 import { WalkMode } from './visit.js';
 import { t } from '../i18n/index.js';
-import { TILE_W, TILE_H } from '../sim/iso.js';
 
 const DIST = { min: 7, max: 150, start: 48 }; // m, camera to the point looked at
 const ELEV = { min: 0.22, max: 1.5, start: 0.82 }; // radians above the horizon
-const START_AZ = Math.PI / 4; // looking along the diagonal, like the 2D isometric view
+const START_AZ = Math.PI / 4; // looking along the diagonal of the park
 
 // The camera from above: turns around a point on the ground.
 export class TopMode {
@@ -139,7 +138,7 @@ export class TopMode {
 
   // ---------------------------------------------------------------- tools
 
-  // the tool chosen in the menus (the hidden 2D scene holds it and runs it, tile by tile)
+  // the tool chosen in the menus (the hidden game scene holds it and runs it, tile by tile)
   toolType() {
     return this.park.scene?.tool?.type ?? 'select';
   }
@@ -165,7 +164,7 @@ export class TopMode {
   toolUp(e) {
     const { tile, hit } = this.park.pick(e.clientX, e.clientY, this.camera);
     if (!tile) return this.park.scene.toolCancel();
-    const cells = this.park.scene.toolUp(tile, null, hit);
+    const cells = this.park.scene.toolUp(tile, hit);
     this.park.showGhost(this.toolType() === 'select' ? null : cells);
   }
 
@@ -291,7 +290,7 @@ export async function startPark3D(world, ui, mode = 'top') {
   try {
     current = new Park3D(world, ui);
   } catch (err) {
-    // no WebGL: the 2D view stays
+    // no WebGL: the page says so (main.js)
     console.error(err);
     current = null;
     return null;
@@ -322,26 +321,23 @@ class Park3D {
       this.park.resize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', this.onResize);
+    // phones and small processors start a step lower; then the frame rate decides (see adaptQuality)
+    const modest = matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency ?? 8) <= 4;
+    this.park.setQuality(modest ? 1 : 0);
+    this.perf = { time: 0, frames: 0 };
     this.park.renderer.setAnimationLoop(() => this.frame());
   }
 
-  // The Phaser scene is ready: hide it (it keeps running the game), and follow its monsters.
+  // The game scene is ready (hidden: it runs the game): follow its monsters, hear its sounds from here.
   setScene(scene) {
     this.park.setScene(scene);
-    scene.sys.setVisible(false);
-    scene.input.enabled = false;
-    if (scene.input.keyboard) scene.input.keyboard.enabled = false;
-    scene.game.canvas.style.visibility = 'hidden';
-    scene.hidden3d = true; // no 2D particles (src/render/monsterfx.js)
     if (scene.sounds) scene.sounds.placer = (x, y) => this.hear(x, y);
   }
 
-  // Loudness and stereo position of a sound at a point of the 2D map (screen pixels of the isometric view),
-  // heard from the 3D camera: softer with the distance, softer still off screen (from above), panned to
-  // its side. Null when too far to be heard.
+  // Loudness and stereo position of a sound at a point of the park (in tiles), heard from the 3D camera:
+  // softer with the distance, softer still off screen (from above), panned to its side. Null when too far.
   hear(x, y) {
-    const a = x / (TILE_W / 2), b = y / (TILE_H / 2);
-    const p = new THREE.Vector3(((a + b) / 2) * T, 1, ((b - a) / 2) * T);
+    const p = new THREE.Vector3(x * T, 1, y * T);
     const cam = this.camera;
     const d = cam.position.distanceTo(p);
     let vol = THREE.MathUtils.clamp(1 - (d - 10) / 120, 0, 1);
@@ -374,10 +370,11 @@ class Park3D {
       .walk-stick { position: absolute; left: 24px; bottom: 120px; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.15);
         border: 2px solid rgba(255,255,255,.35); display: none; pointer-events: none; }
       .walk-knob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.55); }
-      @media (pointer: coarse) { .walk-stick { display: block; } .walk-help { display: none; } }`;
+      @media (pointer: coarse) { .walk-stick { display: block; } .walk-help { display: none; } }
+      @media (max-width: 700px) { .walk-top { top: 100px; } .walk-stick { bottom: 96px; } }`;
     root.appendChild(style);
     root.prepend(this.canvas);
-    // under the menus and HUD (#ui), above the hidden 2D canvas
+    // under the menus and HUD (#ui)
     const ui = document.getElementById('ui');
     if (ui) document.body.insertBefore(root, ui);
     else document.body.appendChild(root);
@@ -412,6 +409,11 @@ class Park3D {
     this.ui.refresh?.(true);
   }
 
+  // A picture of the 3D model of a monster, visitor or keeper for the menus (null until it is ready).
+  portrait(who) {
+    return this.park.portrait(this.park.modelOf(who));
+  }
+
   toggleWalk() {
     this.setMode(this.mode === 'walk' ? 'top' : 'walk');
   }
@@ -439,8 +441,23 @@ class Park3D {
     window.addEventListener('blur', this.onBlur);
   }
 
+  // Every 3 seconds: if the drawing is slow (under ~28 frames per second), one step lighter (setQuality).
+  adaptQuality(rawDt) {
+    const p = this.perf;
+    if (document.hidden || this.park.quality >= 3) return;
+    p.time += rawDt;
+    p.frames++;
+    if (p.time < 3) return;
+    const fps = p.frames / p.time;
+    p.time = 0;
+    p.frames = 0;
+    if (fps < 28) this.park.setQuality(this.park.quality + 1);
+  }
+
   frame() {
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    const raw = this.clock.getDelta();
+    if (raw < 1) this.adaptQuality(raw); // (a long pause: the tab was hidden)
+    const dt = Math.min(raw, 0.1);
     const time = this.clock.elapsedTime;
     const m = this.modes[this.mode];
     m.update(dt);

@@ -1,5 +1,5 @@
 // The mood bubbles over the heads (happy, bored, hungry, scared) and the keeper's alert, drawn on a canvas
-// of any size: 24 px for the 2D view (src/render/textures.js), bigger for the 3D view (src/render3d).
+// of any size, for the 3D view (src/render3d/park-scene.js).
 // A discreet dark disc with a small coloured sign (no cartoon outline), drawn on a 24 x 24 grid.
 const SIGNS = {
   'bubble-happy': (g) => {
@@ -36,8 +36,6 @@ function disc(g, x, y, r) {
   g.arc(x, y, r, 0, Math.PI * 2);
   g.fill();
 }
-
-export const BUBBLE_KEYS = Object.keys(SIGNS);
 
 // A canvas `size` px wide with the bubble `key` drawn on it (null if unknown).
 export function drawBubble(key, size = 24) {

@@ -2,9 +2,8 @@
 // and every sound is a little different each time. The audio starts at the first click or key press
 // (browsers forbid sound before that). The player can mute it (HUD button), remembered in this browser.
 //
-// play(type, { x, y }): (x, y) is a point of the world: the sound is softer when it is far from the
-// middle of the screen or when the camera is zoomed out, panned left / right, and not played at all when
-// far off screen (in the 3D view: by its distance to the 3D camera, see `placer`). A few voices at most at once.
+// play(type, { x, y }): (x, y) is a point of the park (in tiles): the sound is softer when it is far from the
+// 3D camera, panned to its side, and not played at all when too far (see `placer`). A few voices at most at once.
 
 const MUTE_KEY = 'musee-des-monstres:muted';
 const MAX_VOICES = 8;
@@ -58,17 +57,10 @@ export class Sounds {
     if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.55, this.ctx.currentTime, 0.05);
   }
 
-  // Loudness (0..1) and stereo position (-1..1) of a sound at world point (x, y) (2D screen pixels), or null
-  // when out of hearing. The 3D view (src/render3d/park3d.js) sets `placer` to hear from its own camera.
+  // Loudness (0..1) and stereo position (-1..1) of a sound at the point (x, y) of the park (in tiles), or
+  // null when out of hearing: the 3D view (src/render3d/park3d.js) sets `placer` to hear from its camera.
   place(x, y) {
-    if (this.placer) return this.placer(x, y);
-    const cam = this.scene.cameras.main;
-    const v = cam.worldView;
-    const dx = (x - v.centerX) / (v.width / 2), dy = (y - v.centerY) / (v.height / 2);
-    const dist = Math.hypot(dx, dy); // 1 = edge of the screen
-    if (dist > 1.6) return null;
-    const zoom = Math.min(1, Math.max(0.25, cam.zoom));
-    return { vol: Math.max(0, 1 - dist / 1.6) * (0.4 + 0.6 * zoom), pan: Math.max(-0.8, Math.min(0.8, dx * 0.7)) };
+    return this.placer ? this.placer(x, y) : { vol: 1, pan: 0 };
   }
 
   play(type, at, gain = 1) {

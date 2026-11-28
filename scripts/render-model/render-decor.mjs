@@ -2,7 +2,7 @@
 // VARIANTS images per decoration, turned differently, so that several copies do not look identical.
 //
 // Usage: node scripts/render-model/render-decor.mjs
-// Needs the same setup as render.mjs (npm install, then Playwright with Chromium).
+// Needs npm install, then Playwright with Chromium (npx playwright install chromium).
 // Photo-scanned models come from Poly Haven (CC0, https://polyhaven.com): they are downloaded once into
 // models/decor/ (not stored in the repository).
 import { createRequire } from 'node:module';

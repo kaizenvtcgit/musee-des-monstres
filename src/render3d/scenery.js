@@ -51,7 +51,7 @@ export function place(x, y, z, rot = 0, s = 1) {
   return new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q, sc);
 }
 
-// ---------------------------------------------------------------- material tweaks (same as the 2D renders)
+// ---------------------------------------------------------------- material tweaks
 
 // The world position of a vertex, instancing included (for shader tweaks).
 const WORLD_POS = `
@@ -151,7 +151,7 @@ export function prepareDecor(scene) {
   return nodes;
 }
 
-// The dark mouth of a cave was drawn over everything in the 2D renders; here it is a plane tested
+// The dark mouth of a cave was drawn over everything in the decoration renders; here it is a plane tested
 // against depth like the rest, so it goes on the front face of the rock, a little in front of it.
 function putMouths(node, mouths) {
   node.updateWorldMatrix(true, true);

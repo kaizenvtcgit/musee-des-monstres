@@ -1,4 +1,4 @@
-# Plan : passer tout le jeu en 3D
+# Plan : passer tout le jeu en 3D (terminé)
 
 Objectif : remplacer la vue 2D isométrique (Phaser) par une vue 3D (three.js) comme vue principale,
 avec une caméra du dessus que l'on tourne **librement au clic droit**, et tous les outils de construction.
@@ -54,7 +54,12 @@ La « Visite 3D » à pied (déjà faite) devient un simple mode de caméra.
    temps calé sur `getProgress()` ; bulles dessinées par `src/render/bubbles.js` (2D 24 px, 3D 96 px, « ! » du gardien en
    poursuite) ; `Sounds.placer` = écoute depuis la caméra 3D ; `prop-gate.png` retiré pour rester à 511 fichiers) : remplacer le portail d'entrée (blocs blancs), la décoration
    de jardin (boule verte) et les arbres par des modèles (Poly Haven CC0 ou modèles fournis par l'utilisateur).
-4. **Nettoyage et publication** : supprimer les images 2D devenues inutiles (la page en ligne est à la limite de
+4. ✅ **Nettoyage et publication** (fait : la page passe de 511 à 63 fichiers. Phaser tourne en mode Canvas d'1 px, sans
+   entrées ni dessin : `GameScene.js` ne garde que la simulation, les comportements et les outils ; les planches
+   d'animation sont remplacées par leur nombre d'images (`src/config/anim-frames.json`, animations Phaser sur textures
+   vides), les instants des sons sont dans `src/config/anim-events/` ; portraits des fiches rendus depuis les modèles 3D ;
+   mode `?2d`, projection isométrique, sprites, planches de sol, overlay, accessoires 2D et scripts de rendu 2D supprimés ;
+   marche du golem jouée à l'envers en 3D ; qualité adaptative (pixels, puis ombres) ; mise en page téléphone) : supprimer les images 2D devenues inutiles (la page en ligne est à la limite de
    511 fichiers), tests (`npx vitest run`), build, publication de l'artifact.
 
 ## Règles de travail

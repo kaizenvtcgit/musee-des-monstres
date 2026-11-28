@@ -1,7 +1,7 @@
 // The museum in real 3D (three.js), shared by every 3D view (the view from above, the walk).
 // The scene is built from the live world (src/sim): lawn, paths, enclosure grounds, walls with iron
 // railings (or glass where a path runs along), buildings, the forest around; the real 3D monsters
-// (src/assets/3d/*.glb, compressed copies of models/*.glb) walk where the 2D game (Phaser, running hidden)
+// (src/assets/3d/*.glb, compressed copies of models/*.glb) walk where the game (Phaser, running hidden: src/render/GameScene.js)
 // puts them, visitors and keepers too. When the park changes (built, demolished), the static parts are
 // rebuilt. The views only move the camera and handle the input.
 import * as THREE from 'three';
@@ -20,7 +20,7 @@ const ASSETS = import.meta.glob('../assets/3d/**/*.{json,webp}', { eager: true, 
 const asset = (name) => ASSETS[`../assets/3d/${name}`];
 
 export const T = 2.5; // metres per tile
-export const RING = 7; // tiles of scenery around the park (same as the 2D map)
+export const RING = 7; // tiles of scenery around the park around the park
 
 // Monsters: height (m), how it stands, which clips to play.
 const MONSTERS = {
@@ -30,9 +30,9 @@ const MONSTERS = {
   spectre: { height: 2.5, walk: 'Float', idle: 'Idle', hover: 0.35 },
   yeti: { height: 3.0, walk: 'Walk', idle: 'Idle' },
 };
-// The 2D animations of the monsters (the kind in their key, "golem-slam-d3") and the clips of the 3D
+// The animations of the game scene (the kind in their key, "golem-slam-d3": src/render/sprites.js) and the clips of the 3D
 // models playing them: the first one the model has. "sitdown" is the wake-up played backwards, "statue" the
-// idle pose frozen (the 2D animation stops: so does the clip).
+// idle pose frozen (the animation stops: so does the clip).
 const CLIPS = {
   idle: ['Idle'], statue: ['Idle'], walk: ['Walk', 'Crawl', 'Float'], run: ['Run', 'Walk', 'Crawl', 'Float'],
   fly: ['Fly', 'Walk'], flap: ['FlapWings'], stretch: ['Stretch', 'StretchWings'], look: ['Look Around', 'LookAround'],
@@ -40,6 +40,8 @@ const CLIPS = {
   wakeup: ['WakeUp'], sitdown: ['WakeUp'], shake: ['RockShake', 'ShakeFur'], wiggle: ['Tentacle Wiggle'],
   haunt: ['Haunt'], scratch: ['ScratchHead'], happy: ['Happy'], wave: ['Wave'],
 };
+// Clips authored backwards (the golem's walk: its supporting foot moves forward): played the other way.
+const REVERSED = { golem: ['walk'] };
 const VISITOR_MODELS = ['person-men-casual_2', 'person-women-casual', 'person-men-suit', 'person-women-formal'];
 const KEEPER_MODEL = 'person-men-worker';
 
@@ -112,6 +114,21 @@ export class ParkScene {
 
   setScene(scene) {
     this.scene = scene;
+  }
+
+  // Lighter drawing for modest computers and phones: 0 = full, 1 = finer pixels and shadows reduced,
+  // 2 = coarse pixels, small shadows, 3 = no shadows.
+  setQuality(level) {
+    this.quality = level;
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio([Math.min(dpr, 1.75), Math.min(dpr, 1.25), 1, 0.8][level]);
+    const map = [2048, 1536, 1024, 0][level];
+    this.sun.castShadow = map > 0;
+    if (map && this.sun.shadow.mapSize.x !== map) {
+      this.sun.shadow.mapSize.set(map, map);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
   }
 
   // Loads every monster and person model; resolves with the number that failed.
@@ -516,7 +533,7 @@ export class ParkScene {
       const y = (wl) => (wet ? Math.max(BOTTOM, WATER_Y - wl * T) : 0);
       for (const d of e.decor ?? []) {
         if (!ENCLOSURE_DECOR[d.type]) continue;
-        // the variant, turned differently, picked from the tile as in 2D (render-decor.mjs: 0 or 140 degrees)
+        // the variant, turned differently, picked from the tile (as the menu icons, render-decor.mjs: 0 or 140 degrees)
         const v = (d.tx * 7 + d.ty * 13) % 2;
         add(d.type, { tx: d.tx, ty: d.ty, rot: v ? THREE.MathUtils.degToRad(140) : 0, y });
       }
@@ -848,12 +865,11 @@ export class ParkScene {
     }
   }
 
-  // The mood bubble of the 2D entry (bubble-happy, -bored, -hungry, -scared...) over the head: the same
-  // picture, always facing the camera and the same size on screen whatever the zoom.
+  // The mood bubble of the entity in the game scene (bubble-happy, -bored, -hungry, -scared...) over the head: the
+  // picture of src/render/bubbles.js, always facing the camera and the same size on screen whatever the zoom.
   // `icon`: a bubble of the 3D view only (the keeper's alert while chasing).
   syncBubble(e, entry, icon) {
-    const b = entry?.bubble;
-    const key = (b && b.visible ? b.texture.key : null) ?? icon ?? null;
+    const key = entry?.bubbleKey ?? icon ?? null;
     if (!key) {
       if (e.bubble) e.bubble.visible = false;
       return;
@@ -878,8 +894,8 @@ export class ParkScene {
   bubbleTexture(key) {
     this.bubbleTex ??= new Map();
     if (!this.bubbleTex.has(key)) {
-      // drawn big (src/render/bubbles.js) so it stays sharp, else the 2D picture
-      const img = drawBubble(key, 96) ?? this.scene?.textures.get(key).getSourceImage();
+      // drawn big (src/render/bubbles.js) so it stays sharp
+      const img = drawBubble(key, 96);
       if (!img) return null;
       const tx = new THREE.CanvasTexture(img);
       tx.colorSpace = THREE.SRGBColorSpace;
@@ -894,13 +910,14 @@ export class ParkScene {
     e.obj.rotation.y += diff * Math.min(1, dt * 8);
   }
 
-  // A monster plays what its (hidden) 2D sprite plays: the clip of the same behaviour, at the same point of
-  // it (the clip's time follows the 2D animation's progress, so speed, pauses and the game speed follow).
-  // It faces where it walks, or when still the 2D direction (8 directions, d0 toward +y: dir x 45 degrees).
+  // A monster plays what its animation in the hidden game scene plays: the clip of the same behaviour, at the same point of
+  // it (the clip's time follows that animation's progress, so speed, pauses and the game speed follow).
+  // It faces where it walks, or when still its direction in the game (8 directions, d0 toward +y: dir x 45 degrees).
   followAnimation(e, { sprite, dir }, heading, dt) {
     const anims = sprite.anims;
     const parts = anims.currentAnim.key.split('-');
     const kind = parts[parts.length - 2];
+    const species = parts[0].replace(/_[a-z]+$/, ''); // "kraken_water" -> "kraken"
     this.turnTo(e, heading ?? (dir * Math.PI) / 4, dt);
     const name = (CLIPS[kind] ?? CLIPS.idle).find((c) => e.actions[c]) ?? (e.actions.Idle ? 'Idle' : null);
     if (!name) return;
@@ -908,11 +925,12 @@ export class ParkScene {
     const act = e.actions[name];
     act.timeScale = 0; // its time is set here
     const p = Math.max(0, Math.min(1, anims.getProgress() || 0));
-    act.time = (kind === 'sitdown' ? 1 - p : p) * act.getClip().duration * 0.999;
+    const backwards = kind === 'sitdown' || REVERSED[species]?.includes(kind);
+    act.time = (backwards ? 1 - p : p) * act.getClip().duration * 0.999;
     e.kind2d = kind;
   }
 
-  // what the 2D sprite of a visitor or keeper plays and its mood bubble (see followAnimation, syncBubble)
+  // what the animation of a visitor or keeper in the game scene plays and its mood bubble (see followAnimation, syncBubble)
   follow(id) {
     const entry = this.scene?.entitySprites?.get(id);
     return entry?.sprite ? { drive: { sprite: entry.sprite, dir: entry.dir ?? 0 }, bubble: entry } : {};
@@ -939,6 +957,68 @@ export class ParkScene {
     this.sync(this.monsters, items, (it) => this.spawn(it.species, MONSTERS[it.species].height * (0.9 + Math.random() * 0.2)), dt);
   }
 
+  // A picture of a model for the sheets of the menus (its idle pose, seen from the front, a little from the
+  // side): a data URL, or null while it is being made. `name`: the model ("golem", "person-men-suit"...).
+  portrait(name, w = 96, h = 96) {
+    this.portraits ??= new Map();
+    if (this.portraits.has(name)) return this.portraits.get(name);
+    this.portraits.set(name, null);
+    this.model(name).then((m) => {
+      const obj = SkeletonUtils.clone(m.scene);
+      const idle = m.animations.find((c) => c.name === 'Idle');
+      if (idle) {
+        const mixer = new THREE.AnimationMixer(obj);
+        mixer.clipAction(idle).play();
+        mixer.update(0.4);
+      }
+      obj.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(obj, true);
+      const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+      const scene = new THREE.Scene();
+      scene.environment = this.s3.environment;
+      scene.add(obj, new THREE.HemisphereLight(0xffffff, 0x6a6458, 1.4));
+      const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
+      sun.position.set(c.x - 3, c.y + 6, c.z + 5);
+      scene.add(sun);
+      const cam = new THREE.PerspectiveCamera(28, w / h, 0.01, 100);
+      const r = Math.max(size.y, size.x * 0.9, size.z * 0.9) * 0.6 / Math.tan(THREE.MathUtils.degToRad(14));
+      cam.position.copy(c).add(new THREE.Vector3(0.45, 0.25, 1).normalize().multiplyScalar(r));
+      cam.lookAt(c);
+      // drawn twice as big, then reduced (smooth edges)
+      const W = w * 2, H = h * 2;
+      const rt = new THREE.WebGLRenderTarget(W, H);
+      rt.texture.colorSpace = THREE.SRGBColorSpace;
+      const ren = this.renderer, oldAlpha = ren.getClearAlpha(), oldColor = ren.getClearColor(new THREE.Color());
+      ren.setRenderTarget(rt);
+      ren.setClearColor(0x000000, 0);
+      ren.clear();
+      ren.render(scene, cam);
+      const px = new Uint8Array(W * H * 4);
+      ren.readRenderTargetPixels(rt, 0, 0, W, H, px);
+      ren.setRenderTarget(null);
+      ren.setClearColor(oldColor, oldAlpha);
+      rt.dispose();
+      const big = document.createElement('canvas');
+      big.width = W; big.height = H;
+      const img = big.getContext('2d').createImageData(W, H);
+      for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4); // rows bottom-up
+      big.getContext('2d').putImageData(img, 0, 0);
+      const out = document.createElement('canvas');
+      out.width = w; out.height = h;
+      out.getContext('2d').drawImage(big, 0, 0, w, h);
+      this.portraits.set(name, out.toDataURL());
+    }).catch((err) => console.error(err));
+    return null;
+  }
+
+  // The model of a visitor (always the same for a given visitor), of a keeper, of a monster.
+  modelOf({ kind, id, speciesId }) {
+    if (kind === 'monster') return speciesId;
+    if (kind === 'keeper') return KEEPER_MODEL;
+    const k = [...String(id)].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
+    return VISITOR_MODELS[k % VISITOR_MODELS.length];
+  }
+
   syncPeople(dt) {
     const px = this.focus.x, pz = this.focus.z, r = this.viewPeople;
     const near = (x, y) => Math.hypot(x * T - px, y * T - pz) < r;
@@ -946,7 +1026,7 @@ export class ParkScene {
     for (const v of this.world.visitors) {
       if (v.state === 'gone' || !v.pos || !near(v.pos.x, v.pos.y)) continue;
       const k = [...v.id].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
-      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, model: VISITOR_MODELS[k % VISITOR_MODELS.length], walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
+      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, model: this.modelOf({ kind: 'visitor', id: v.id }), walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
     }
     for (const kp of this.world.keepers) {
       if (!kp.pos || !near(kp.pos.x, kp.pos.y)) continue;

@@ -1,9 +1,8 @@
-// Renders the lawn, the paths and the ground of the enclosure habitats (scripts/render-model/ground.html) into
-// src/assets/tiles/tile-<habitat>-sheet.webp (4 x 4 tiles that fit together, in one image: row = y) and
-// src/assets/tiles/tile-<habitat>.png (one tile, used for the toolbar icons and as a fallback).
+// Renders the icons of the paths and of the ground of the enclosure habitats (scripts/render-model/ground.html):
+// src/assets/tiles/tile-<habitat>.png (one tile, for the menus: toolbar, habitat picker, enclosure sheet).
 //
 // Usage: node scripts/render-model/render-ground.mjs [habitat...]
-// Needs the same setup as render.mjs (npm install, then Playwright with Chromium).
+// Needs npm install, then Playwright with Chromium (npx playwright install chromium).
 // Photo textures come from ambientCG (CC0, https://ambientcg.com): they are downloaded once
 // into models/textures/ (not stored in the repository).
 import { createRequire } from 'node:module';
@@ -77,8 +76,6 @@ await page.waitForFunction(() => window.ready, null, { timeout: 60000 });
 
 const save = (file, dataUrl) => writeFileSync(path.join(ROOT, 'src/assets/tiles', file), Buffer.from(dataUrl.split(',')[1], 'base64'));
 for (const h of wanted) {
-  save(`tile-${h}-sheet.webp`, await page.evaluate((o) => window.renderGround({ ...o, sheet: true }), HABITATS[h]));
-  if (HABITATS[h].anim) save(`tile-${h}-anim.webp`, await page.evaluate((o) => window.renderGroundAnim(o), HABITATS[h]));
   const [[still]] = await page.evaluate((o) => window.renderGround({ ...o, format: 'image/png' }), HABITATS[h]);
   save(`tile-${h}.png`, still);
   console.log(`${h} done`);

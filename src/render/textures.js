@@ -1,6 +1,5 @@
-// Every visual of the game is drawn here, in code, at boot.
-// Flat cartoon style: bright fills, thick dark outlines, big eyes.
-import { BUBBLE_KEYS, drawBubble } from './bubbles.js';
+// Small pictures drawn in code at boot, for the menus: the icons and portraits used when there is no
+// Blender render or 3D portrait (yet), the egg. Flat cartoon style.
 
 const OUTLINE = 0x2b2d42;
 
@@ -151,16 +150,7 @@ function stall(g, awning, stripe) {
 }
 
 export function generateTextures(scene) {
-  // ground
-  tex(scene, 'tile-grass', 64, 32, (g) => {
-    diamond(g, 0x95d5b2, 0x40916c);
-  });
-  tex(scene, 'tile-grass2', 64, 32, (g) => {
-    diamond(g, 0x8fcfa9, 0x40916c);
-    g.fillStyle(0x74c69d);
-    g.fillTriangle(24, 14, 27, 8, 30, 14);
-    g.fillTriangle(36, 20, 39, 14, 42, 20);
-  });
+  // icons of the grounds (when there is no Blender render)
   tex(scene, 'tile-path', 64, 32, (g) => {
     diamond(g, 0xf2e2ba, 0xbc8a5f);
     g.fillStyle(0xe6ccb2);
@@ -175,16 +165,6 @@ export function generateTextures(scene) {
       g.fillEllipse(40, 20, 8, 3);
     });
   }
-  // soft ground shadow under monsters (64 x 24)
-  tex(scene, 'shadow', 64, 24, (g) => {
-    for (let i = 6; i >= 1; i--) {
-      g.fillStyle(0x000000, 0.06);
-      g.fillEllipse(32, 12, 10 * i, 4 * i);
-    }
-  });
-  tex(scene, 'tile-entrance', 64, 32, (g) => {
-    diamond(g, 0xffd166, 0xbc8a5f);
-  });
 
   // monsters
   for (const [id, palettes] of Object.entries(MONSTER_PALETTES)) {
@@ -247,8 +227,6 @@ export function generateTextures(scene) {
     g.fillCircle(15, 20, 2);
   });
 
-  // mood bubbles (24 x 24, src/render/bubbles.js)
-  for (const key of BUBBLE_KEYS) if (!scene.textures.exists(key)) scene.textures.addCanvas(key, drawBubble(key, 24));
 }
 
 export function monsterTextureKey(monster) {
