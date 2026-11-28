@@ -202,6 +202,39 @@ export function generateTextures(scene) {
     g.fillTriangle(32, 0, 37, 14, 27, 14);
     g.fillTriangle(32, 18, 37, 4, 27, 4);
   });
+  // the Furniture menu: a park bench
+  tex(scene, 'furniture', 64, 64, (g) => {
+    g.fillStyle(0x7a4a2a);
+    g.fillRect(10, 20, 44, 6);
+    g.fillRect(10, 30, 44, 6);
+    g.fillRect(8, 40, 48, 6);
+    g.fillStyle(0x2b2d31);
+    g.fillRect(12, 46, 5, 12);
+    g.fillRect(47, 46, 5, 12);
+  });
+  // the cash machine: a grey box, its blue sign and dark screen
+  tex(scene, 'atm', 64, 64, (g) => {
+    g.fillStyle(0x3a3d42);
+    g.fillRect(20, 10, 24, 50);
+    g.fillStyle(0x1f2f6b);
+    g.fillRect(20, 8, 24, 8);
+    g.fillStyle(0x0c0e12);
+    g.fillRect(24, 20, 16, 11);
+    g.fillStyle(0x8a9099);
+    g.fillRect(24, 34, 16, 4);
+  });
+  // the car park: a blue sign with a white P
+  tex(scene, 'parking', 64, 64, (g) => {
+    g.fillStyle(0x1f5fbf);
+    g.fillRoundedRect(6, 6, 52, 52, 8);
+    g.lineStyle(3, 0xffffff);
+    g.strokeRoundedRect(8, 8, 48, 48, 7);
+    g.fillStyle(0xffffff);
+    g.fillRect(22, 16, 7, 34);
+    g.fillRect(22, 16, 16, 6);
+    g.fillRect(22, 30, 16, 6);
+    g.fillRect(34, 16, 7, 20);
+  });
   tex(scene, 'expeditionBase', 128, 112, (g) => {
     shape(g, 0xbc6c25, (m) => g[`${m}Triangle`](64, 20, 18, 92, 110, 92));
     shape(g, 0x6f1d1b, (m) => g[`${m}Triangle`](64, 50, 50, 92, 78, 92));

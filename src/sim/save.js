@@ -39,6 +39,7 @@ export function serializeWorld(w) {
     keepers: clone(w.keepers),
     expedition: clone(w.expeditionBase.active),
     hatchery: { eggs: clone(w.hatchery.eggs), storedIds: w.hatchery.stored.map((m) => m.id) },
+    parking: clone(w.parking),
   };
 }
 
@@ -77,6 +78,7 @@ export function deserializeWorld(data) {
   w.visitors.push(...data.visitors);
   w.keepers.push(...data.keepers);
   w.expeditionBase.active = data.expedition;
+  w.parking = data.parking ?? null; // (older saves have none)
   w.hatchery.eggs = data.hatchery.eggs;
   w.hatchery.stored = data.hatchery.storedIds.map((id) => w.monsters.get(id)).filter(Boolean);
   // buildings that are bigger now (the expedition base: 3 x 3)

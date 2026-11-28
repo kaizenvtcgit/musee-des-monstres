@@ -10,10 +10,14 @@ export const SNACK_STANDS = {
   krakenWaffles: { id: 'krakenWaffles', model: 'stand-kraken-waffles', front: 0, vendor: { x: -0.02, y: -0.25, z: 0.22, turn: 0 } }, // its vendor in the counter's window
 };
 
+// The looks of the Snack menu (src/render/ui.js SNACKS) and their stand.
+const LOOKS = { waffles: 'krakenWaffles', grill: 'dragonGrill' };
+
 // The stand of a snack building: the one chosen when it was built; the stands of older saved games (built
 // before there was a choice) keep the look they had, picked from their id.
 export function standOf(building) {
   if (SNACK_STANDS[building.variant]) return SNACK_STANDS[building.variant];
+  if (LOOKS[building.look]) return SNACK_STANDS[LOOKS[building.look]]; // picked in the Snack menu by its look
   const n = Number(String(building.id).replace(/\D/g, '')) || 0;
   return n % 2 ? SNACK_STANDS.krakenWaffles : SNACK_STANDS.dragonGrill;
 }

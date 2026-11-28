@@ -29,6 +29,8 @@ Puis ouvre l'adresse affichée (http://localhost:5180).
 | `node scripts/render-model/render-decor.mjs` | Refait les décorations d'enclos et les abris : le fichier 3D `src/assets/3d/decor.glb.json` et leurs icônes des menus (modèles Poly Haven téléchargés automatiquement, ou fabriqués dans `scripts/render-model/decor.html`). Il faut d'abord `npm install --no-save playwright` puis `npx playwright install chromium` |
 | `node scripts/render-model/render-ground.mjs` | Refait les icônes des sols (allée, habitats) à partir de textures photo, téléchargées automatiquement |
 | `node scripts/3d/glb-to-json.mjs fichier.glb` | Emballe un modèle `.glb` dans un `.glb.json` (voir « Modèles 3D ») |
+| `node scripts/3d/atm-to-glb.cjs` | Refait le distributeur de billets (`src/assets/3d/atm.glb.json`) à partir de `models/parking/` (détails en tête du script) |
+| `node scripts/3d/cars-to-glb.cjs` | Refait les voitures du parking (`src/assets/3d/cars.glb.json`) à partir de `models/cars/*.fbx` (détails en tête du script) |
 
 ## Comment jouer
 
@@ -53,13 +55,21 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   monstre né (on voit les œufs dedans, qui brillent et bougent à l'approche de l'éclosion).
 - **Allée** : glisser pour tracer.
 - **Enclos** : choisir l'habitat, puis glisser un rectangle. Deux enclos voisins du même habitat fusionnent.
-- **Décoration** : le jardin (sur l'herbe : pot de plante, arbuste, lampadaire, banc, jardinière, rochers ou
-  poubelle ; rend les visiteurs heureux), 3 décorations par habitat à placer dans un enclos du bon habitat
+- **Mobilier** : un menu où l'on choisit quoi poser sur l'herbe, près des allées : banc, poubelle, lampadaire, pot
+  de plante, arbuste, jardinière, rochers (100 pièces, rendent les visiteurs heureux autour) et le distributeur de
+  billets (400 pièces : les visiteurs qui passent devant dépensent ensuite 25 % de plus au snack et à la boutique).
+- **Décoration** : 3 décorations par habitat à placer dans un enclos du bon habitat
   (monstres plus heureux, visiteurs plus attirés ; les 4 premières comptent), et l'**abri** : antre volcanique,
   grotte sous-marine, mausolée, tertre moussu ou caverne de glace, sur 2 × 2 cases d'un enclos d'au moins 6 cases.
   Le monstre s'y réfugie de temps en temps (plus souvent s'il est stressé) : il se repose à l'entrée, ou s'y cache.
   Il y est plus heureux, mais caché il n'attire plus les visiteurs.
-- **Snack**, **Souvenirs** (la Fabrique à Monstres) : les visiteurs y dépensent leur argent.
+- **Snack** (un menu : les Gaufres du Kraken ou le Grill du Dragon), **Souvenirs** (la Fabrique à Monstres) : les
+  visiteurs y dépensent leur argent.
+- **Parking** (1 500 pièces, un seul) : à poser sur l'herbe devant l'entrée, entre le parc et la route (pas devant le
+  portail). Les visiteurs viennent 30 % plus souvent, en voiture : elle arrive par la route, se gare, ses passagers
+  (1 à 3) marchent jusqu'à l'entrée, et quand ils sont tous revenus elle sort en marche arrière et repart. La
+  barrière de la voie d'accès se lève devant chaque voiture, à côté de la guérite et de son gardien. Plein
+  (11 places), les visiteurs arrivent à pied comme avant. Clic dessus : sa fiche (places occupées, démolition).
 - **Gardien** : rattrape les monstres évadés (un « ! » au-dessus de sa tête pendant la poursuite).
 - **Démolir** : retire une allée, un enclos, un bâtiment ou une décoration.
 
@@ -79,6 +89,7 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
 
 - `src/sim/` : toutes les règles du jeu (sans affichage), testées dans `tests/sim/`.
 - `src/sim/save.js` : transforme une partie en données (et l'inverse) ; `src/save/storage.js` : l'enregistre dans le navigateur.
+- `src/sim/parking.js` : le parking, ses voitures et leurs trajets (testés dans `tests/sim/parking.test.js`).
 - `src/render3d/` : ce qu'on voit, en 3D (three.js).
   - `park-scene.js` : le parc (sol, allées, murs, bâtiments, forêt), reconstruit quand il change ; les monstres et
     les personnes ; le choix de ce qui est sous le pointeur ; les bulles ; les portraits des fiches.
@@ -86,6 +97,7 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   - `park3d.js` : la vue du dessus (caméra, outils), la bascule vers la marche à pied, la qualité adaptée à
     l'appareil, les sons entendus depuis la caméra.
   - `visit.js` : la marche à pied.
+  - `parking3d.js` : la route, le parking et ses voitures (roues qui tournent, peintures variées).
 - `src/render/GameScene.js` : une scène Phaser **cachée** qui fait tourner le jeu (rien n'y est dessiné) : elle
   avance la simulation, décide ce que fait chaque monstre (flâner, se reposer, une action, une sieste…) et joue son
   animation (sur une texture vide) ; la vue 3D joue le clip du même nom, au même moment. Elle porte aussi les outils
@@ -131,6 +143,14 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   (licence CC0), allégés avec gltf-transform.
 - Sols : textures photo de [ambientCG](https://ambientcg.com) (licence CC0) — pelouse Grass004, allées PavingStones070, enclos Lava003, Tiles093, Ground068, Snow013, Ground110, Ground111, Ground071, PavingStones138, Rock012, Snow015, Snow008A.
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
+- Voitures du parking : « [Cars Pack](https://quaternius.com/packs/cars.html) » de Quaternius (licence CC0),
+  originaux dans `models/cars/`.
+- Barrière et guérite du parking : modèles faits pour le projet (`models/parking/barriere_parking_musee.glb`, avec ses
+  animations « Ouverture » et « Fermeture », et `models/parking/guerite_musee_amenagee.glb`), allégés avec
+  gltf-transform en `parking-barrier.glb.json` et `parking-booth.glb.json` (garder `--prune false` pour le repère
+  `Position_Gardien`).
+- Distributeur de billets : modèle fourni pour le projet (`models/parking/ATM.fbx` et ses textures), refait en
+  `src/assets/3d/atm.glb.json` par `scripts/3d/atm-to-glb.cjs` (textures 512 px).
 - Bibliothèques : [three.js](https://threejs.org) (3D) et [Phaser](https://phaser.io) (boucle de jeu), licence MIT.
 - `docs/` : document de conception et plan de construction.
 

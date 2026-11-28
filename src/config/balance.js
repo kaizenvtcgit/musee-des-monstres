@@ -13,6 +13,8 @@ export const BALANCE = {
   bridgeCostPerTile: 50, // per tile of deck (5 x a path)
   bridgeViewBonus: 0.25, // watching an enclosure from a bridge: that much more satisfaction
   bridgeDeckHeight: 3.9, // metres: the tallest monster (golem, 3.4 m) walks under it
+  parkingCost: 1500, // the car park in front of the entrance (src/sim/parking.js)
+  parkingVisitorBonus: 1.3, // visitors come that much more often with it
   ticketPriceDefault: 20,
   ticketPriceRef: 20,
   visitorBaseIntervalSec: 8,
@@ -26,6 +28,8 @@ export const BALANCE = {
   hungerPerMin: 10,
   snackPrice: 8,
   souvenirPrice: 15,
+  atmCost: 400, // a cash machine: visitors walking past it then spend more at the stands
+  atmSpendBonus: 1.25, // what a visitor who took cash pays at a snack or souvenir shop, times the price
   decorationRadius: 3,
   // decorations inside an enclosure (src/config/decor.js), each one up to decorMaxCount:
   decorHappiness: 5, // + happiness points for its monsters

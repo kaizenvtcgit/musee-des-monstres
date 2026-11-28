@@ -414,6 +414,11 @@ class Park3D {
     return this.park.portrait(this.park.modelOf(who));
   }
 
+  // A picture of a garden decoration, the cash machine or a snack stand, for the menus (null until ready).
+  thingPortrait(key) {
+    return this.park.thingPortrait(key);
+  }
+
   toggleWalk() {
     this.setMode(this.mode === 'walk' ? 'top' : 'walk');
   }

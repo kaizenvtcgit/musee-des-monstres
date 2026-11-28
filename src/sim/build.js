@@ -9,6 +9,7 @@ const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
   snack: { size: 1, price: BALANCE.snackCost },
   souvenir: { size: 1, price: BALANCE.souvenirCost },
+  atm: { size: 1, price: BALANCE.atmCost }, // a cash machine (visitors walking past spend more: visitors.js)
   expeditionBase: { size: 3, price: 0 }, // a big military tent (older saved games: 2 x 2, see growBuilding)
   hatchery: { size: 2, price: 0 },
 };
@@ -210,6 +211,8 @@ export class Builder {
   }
 
   // opts.free: no cost (initial world); opts.fixed: cannot be demolished.
+  // opts.look: which one it is, picked in the menus (a garden decoration: 'parkBench', 'trashCan'...;
+  // a snack: 'waffles' or 'grill'); without it (older games), the look is picked from its id.
   placeBuilding(type, tx, ty, opts = {}) {
     const def = BUILDING_DEFS[type];
     const x1 = tx + def.size - 1, y1 = ty + def.size - 1;
@@ -221,6 +224,7 @@ export class Builder {
     const b = { id, type, x0: tx, y0: ty, x1, y1, price, fixed: !!opts.fixed };
     if (opts.variant) b.variant = opts.variant; // which snack stand (src/config/stands.js)
     if (opts.rot != null) b.rot = turns(opts.rot); // which way it faces (src/sim/facing.js)
+    if (opts.look) b.look = opts.look;
     this.buildings.set(id, b);
     this.#fillRect(tx, ty, x1, y1, id);
     return { ok: true, id };

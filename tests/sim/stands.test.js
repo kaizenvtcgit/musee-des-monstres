@@ -21,3 +21,11 @@ describe('snack stands', () => {
     expect(standOf({ id: 'snack8', type: 'snack' })).toBe(SNACK_STANDS.dragonGrill);
   });
 });
+
+describe('standOf with a look from the Snack menu', () => {
+  it('waffles and grill are the two stands', () => {
+    expect(standOf({ id: 'snack2', look: 'waffles' })).toBe(SNACK_STANDS.krakenWaffles);
+    expect(standOf({ id: 'snack3', look: 'grill' })).toBe(SNACK_STANDS.dragonGrill);
+    expect(standOf({ id: 'snack3', look: 'grill', variant: 'krakenWaffles' })).toBe(SNACK_STANDS.krakenWaffles);
+  });
+});

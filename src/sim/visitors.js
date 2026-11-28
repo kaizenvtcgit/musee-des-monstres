@@ -2,6 +2,7 @@ import { BALANCE } from '../config/balance.js';
 import { findPath } from './pathfinding.js';
 import { appeal, decorCount } from './monsters.js';
 import { HABITAT_APPEAL } from '../config/species.js';
+import { walkStraight, doorOf } from './parking.js';
 
 // tiles / s (2.5 m per tile in the 3D view): a brisk walk, 1.5 m/s, and a run, 3.4 m/s, matching the stride of
 // their walk and run animations (ANIM_FPS.person, src/render/sprites.js), so their feet do not slide
@@ -34,6 +35,7 @@ export function createVisitor(entrance, variant = 0) {
     pos: { x: entrance.tx, y: entrance.ty },
     tile: { tx: entrance.tx, ty: entrance.ty },
     state: 'walking', // 'walking' | 'watching' | 'shopping' | 'fleeing' | 'leaving' | 'gone'
+    //                   (came by car: 'arriving' from the car park to the entrance, 'toCar' back to it)
     mood: 'happy', // 'happy' | 'bored' | 'hungry' | 'scared'
     satisfaction: 0.4,
     path: null,
@@ -48,6 +50,11 @@ export function createVisitor(entrance, variant = 0) {
   };
 }
 
+// The car a visitor came in, if it is still in the car park.
+function carOf(v, ctx) {
+  return (v.carId && ctx.parking?.cars.find((c) => c.id === v.carId)) || null;
+}
+
 export function scare(visitor) {
   if (visitor.state === 'gone' || visitor.state === 'fleeing') return;
   visitor.state = 'fleeing';
@@ -59,6 +66,19 @@ export function scare(visitor) {
 
 export function updateVisitor(v, ctx, dt) {
   if (v.state === 'gone') return;
+  // between the car park and the entrance, on the lawn outside the park
+  if (v.state === 'arriving') {
+    if (walkStraight(v, { x: ctx.entrance.tx, y: ctx.entrance.ty }, dt)) {
+      v.state = 'walking';
+      v.tile = { tx: ctx.entrance.tx, ty: ctx.entrance.ty };
+    }
+    return;
+  }
+  if (v.state === 'toCar') {
+    const car = carOf(v, ctx);
+    if (!car || walkStraight(v, doorOf(ctx.parking, car.place), dt)) v.state = 'gone';
+    return;
+  }
   v.age += dt;
   decorationBonus(v, ctx, dt);
 
@@ -208,6 +228,19 @@ function canEnter(v, ctx, tile) {
   return v.grass || t.ground === 'path';
 }
 
+// Walking past a cash machine (on a tile next to it), a visitor takes cash, once: it then spends more.
+export function takeCash(v, ctx) {
+  if (v.cash) return;
+  const { grid, builder } = ctx;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const t = grid.inBounds(v.tile.tx + dx, v.tile.ty + dy) && grid.getTile(v.tile.tx + dx, v.tile.ty + dy);
+    if (t && t.occupant && builder.buildings.get(t.occupant)?.type === 'atm') {
+      v.cash = true;
+      return;
+    }
+  }
+}
+
 function move(v, ctx, dt) {
   let budget = (v.state === 'fleeing' ? FLEE_SPEED : WALK_SPEED) * dt;
   while (budget > 0) {
@@ -227,6 +260,7 @@ function move(v, ctx, dt) {
       v.pos.x = next.tx;
       v.pos.y = next.ty;
       v.tile = { tx: next.tx, ty: next.ty };
+      takeCash(v, ctx);
       v.path.shift();
       budget -= dist;
     } else {
@@ -241,7 +275,8 @@ function arrive(v, ctx) {
   const target = v.target;
   v.path = null;
   if (target.kind === 'exit') {
-    v.state = 'gone';
+    // came by car: back to it (it leaves once all its passengers are in)
+    v.state = carOf(v, ctx) ? 'toCar' : 'gone';
     return;
   }
   if (target.kind === 'enclosure') {
@@ -260,14 +295,14 @@ function arrive(v, ctx) {
     return;
   }
   if (target.kind === 'snack' && ctx.builder.buildings.has(target.id)) {
-    ctx.wallet.earn(BALANCE.snackPrice);
+    ctx.wallet.earn(BALANCE.snackPrice * (v.cash ? BALANCE.atmSpendBonus : 1));
     v.ate = true;
     v.state = 'shopping';
     v.timer = SHOP_SEC;
     return;
   }
   if (target.kind === 'souvenir' && ctx.builder.buildings.has(target.id)) {
-    ctx.wallet.earn(BALANCE.souvenirPrice);
+    ctx.wallet.earn(BALANCE.souvenirPrice * (v.cash ? BALANCE.atmSpendBonus : 1));
     v.boughtSouvenir = true;
     v.state = 'shopping';
     v.timer = SHOP_SEC;
