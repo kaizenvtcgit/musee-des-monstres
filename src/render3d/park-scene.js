@@ -48,6 +48,52 @@ const CLIPS = {
 const REVERSED = { golem: ['walk'] };
 const VISITOR_MODELS = ['person-men-casual_2', 'person-women-casual', 'person-men-suit', 'person-women-formal'];
 const KEEPER_MODEL = 'person-men-worker';
+const VENDOR_MODEL = 'vendor-snack';
+const VENDOR_HEIGHT = 1.65;
+const VENDOR_CHORES = ['PrepareFood', 'CleanCounter', 'Restock', 'LookAround', 'Stretch', 'Bored'];
+
+// Flames (see ParkScene.addFire): value noise rising through the quad, shaped into tongues hot at the base.
+const FIRE_VERTEX = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+const FIRE_FRAGMENT = /* glsl */ `
+uniform float uTime;
+uniform float uSeed;
+uniform float uLayer;
+varying vec2 vUv;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+  return v;
+}
+void main() {
+  vec2 uv = vUv;
+  float t = uTime * (1.0 + uLayer * 0.35) + uSeed;
+  // the air sways the flames sideways a little, more at their tips
+  float sway = (fbm(vec2(uv.y * 2.0 - t * 0.7, uSeed)) - 0.5) * 0.25 * uv.y;
+  vec2 p = vec2((uv.x + sway) * 4.0, uv.y * 2.2 - t * 2.4);
+  float n = fbm(p) * 0.65 + fbm(p * 2.1 + 3.7) * 0.35;
+  // tongues: tall here, short there, changing slowly
+  float tongue = 0.55 + 0.45 * fbm(vec2(uv.x * 6.0 + uSeed, t * 0.5));
+  float heat = n * 1.7 * (1.0 - uv.y / tongue) + (1.0 - uv.y) * 0.25;
+  // soft sides
+  heat *= smoothstep(0.0, 0.18, uv.x) * smoothstep(1.0, 0.82, uv.x);
+  // the embers' glow at the base, breathing
+  heat += smoothstep(0.12, 0.0, uv.y) * (0.35 + 0.15 * sin(t * 3.0 + uv.x * 9.0)) * smoothstep(0.0, 0.1, uv.x) * smoothstep(1.0, 0.9, uv.x);
+  float a = smoothstep(0.25, 0.6, heat);
+  vec3 col = mix(vec3(0.55, 0.06, 0.0), vec3(1.0, 0.42, 0.04), smoothstep(0.3, 0.7, heat));
+  col = mix(col, vec3(1.0, 0.86, 0.45), smoothstep(0.75, 1.1, heat));
+  gl_FragColor = vec4(col * a * (1.4 - uLayer * 0.4), a);
+}`;
 
 // Ground textures: file, metres covered by one copy of the texture, tint.
 const GROUNDS = {
@@ -87,6 +133,7 @@ export class ParkScene {
     this.scene = scene;
     this.people = new Map(); // id -> { obj, mixer, actions, current, last }
     this.monsters = new Map();
+    this.vendors = new Map(); // snack building id -> its vendor { obj, mixer, actions, current, until }
     this.models = new Map(); // file -> Promise<{ scene, animations, box }>
     this.texCache = new Map();
     this.focus = new THREE.Vector3(); // where the camera looks: shadows and people around it
@@ -515,10 +562,11 @@ vec2 flowUv(vec2 uv) {
       const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
       if (b.type === 'snack') {
         // the stand the player chose: the Kraken's waffles or the Dragon's grill (src/config/stands.js)
-        const { model, front } = standOf(b);
+        const { model, front, fire } = standOf(b);
         // a real kiosk next to the visitors: counter about waist high, the edge of its roof about 2.3 m up
         // (3.1 m across: it overhangs its tile a little)
         this.placeModel(group, model, cx, cz, 3.1, this.facing(b) + front, b.id);
+        if (fire) this.addFire(group, cx, cz, this.facing(b) + front, fire);
       } else if (b.type === 'souvenir') {
         // the same: the edge of its roof about 2.4 m up, its dragon on top about 3.8 m
         this.placeModel(group, 'fabrique-a-monstres', cx, cz, 3.25, this.facing(b), b.id);
@@ -555,6 +603,34 @@ vec2 flowUv(vec2 uv) {
         group.add(instanceGroup(tpl, mats, { base: v.decor ? tpl.parent : null, ids }));
       }
     }).catch((err) => console.error(err));
+  }
+
+  // Live flames in a stand's oven (the Dragon's mouth): two flat layers of fire, one a little in front of the
+  // other, drawn by a shader (rising noise, hot at the base, tongues licking up) and moved by the shared clock
+  // this.fireTime (see update). `f`: { x, y (its base), z, w, h } in metres in the stand's frame (src/config/stands.js).
+  addFire(group, cx, cz, rot, f) {
+    this.fireTime ??= { value: 0 };
+    this.fireGeo ??= new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0); // its base at y = 0
+    const c = Math.cos(rot), s = Math.sin(rot);
+    for (const [k, seed] of [[0, 0], [1, 7.3]]) {
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: this.fireTime, uSeed: { value: seed }, uLayer: { value: k } },
+        vertexShader: FIRE_VERTEX,
+        fragmentShader: FIRE_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(this.fireGeo, mat);
+      // the front layer: a little narrower and lower, closer to the visitors
+      const dz = f.z + k * 0.06, w = f.w * (1 - k * 0.15), h = f.h * (1 - k * 0.25);
+      mesh.position.set(cx + f.x * c + dz * s, f.y, cz - f.x * s + dz * c);
+      mesh.rotation.y = rot;
+      mesh.scale.set(w, h, 1);
+      mesh.renderOrder = 4;
+      group.add(mesh);
+    }
   }
 
   // The props (Poly Haven models) and the enclosure decorations, loaded once (see scenery.js).
@@ -1110,6 +1186,69 @@ vec2 flowUv(vec2 uv) {
     this.sync(this.people, items, (it) => this.spawn(it.model, it.h), dt);
   }
 
+  // The vendor behind the counter of each snack stand (src/assets/3d/vendor-snack.glb.json, its clips:
+  // Serve, CashRegister, Greeting, Idle and small chores). Serves while a visitor buys at the stand, greets
+  // those walking up to it, otherwise waits and now and then does a chore. Not clickable.
+  syncVendors(dt) {
+    const px = this.focus.x, pz = this.focus.z, r = this.viewPeople;
+    const seen = new Set();
+    for (const b of this.world.builder.buildings.values()) {
+      if (b.type !== 'snack') continue;
+      const stand = standOf(b);
+      const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
+      if (Math.hypot(cx - px, cz - pz) > r) continue;
+      seen.add(b.id);
+      let e = this.vendors.get(b.id);
+      if (!e) {
+        e = { loading: true };
+        this.vendors.set(b.id, e);
+        this.spawn(VENDOR_MODEL, VENDOR_HEIGHT).then((body) => {
+          if (this.vendors.get(b.id) !== e) return;
+          Object.assign(e, body, { loading: false, until: 0 });
+          for (const a of Object.values(e.actions)) {
+            if (a.getClip().name !== 'Idle') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+          }
+          this.s3.add(e.obj);
+        }).catch(() => { e.failed = true; });
+        continue;
+      }
+      if (e.loading || e.failed) continue;
+      // at its counter (src/config/stands.js), facing the visitors
+      const rot = this.facing(b) + stand.front, { x = 0, y = 0, z = 0, turn = 0 } = stand.vendor ?? {};
+      const c = Math.cos(rot), s = Math.sin(rot);
+      e.obj.position.set(cx + x * c + z * s, y, cz - x * s + z * c);
+      e.obj.rotation.y = rot + turn;
+      this.vendorAct(e, b, cx, cz);
+      e.mixer.update(dt);
+    }
+    for (const [id, e] of this.vendors) {
+      if (seen.has(id)) continue;
+      if (e.obj) this.s3.remove(e.obj);
+      this.vendors.delete(id);
+    }
+  }
+
+  // What a vendor does now (see syncVendors). A clip, once started, plays to its end.
+  vendorAct(e, b, cx, cz) {
+    const now = performance.now() / 1000;
+    let buying = false, coming = false;
+    for (const v of this.world.visitors) {
+      if (v.target?.id !== b.id || !v.pos) continue;
+      if (v.state === 'shopping') buying = true;
+      else if (v.state === 'walking' && Math.hypot(v.pos.x * T - cx, v.pos.y * T - cz) < 2.2 * T) coming = true;
+    }
+    if (now < e.until) return;
+    let next;
+    if (buying) next = e.current === 'Serve' ? 'CashRegister' : 'Serve';
+    else if (coming && e.current !== 'Greeting' && e.current !== 'CashRegister') next = 'Greeting';
+    else if (e.current !== 'Idle') next = 'Idle';
+    else next = VENDOR_CHORES[Math.floor(Math.random() * VENDOR_CHORES.length)];
+    this.play(e, next, 0.35);
+    const clip = e.actions[next]?.getClip();
+    // idle: 4 to 10 s before the next chore; any other clip: until its end
+    e.until = now + (next === 'Idle' ? 4 + Math.random() * 6 : (clip?.duration ?? 2) - 0.3);
+  }
+
   // ---------------------------------------------------------------- picking
 
   // What is under a point of the screen (client pixels), seen by `camera`:
@@ -1229,9 +1368,11 @@ vec2 flowUv(vec2 uv) {
     }
     this.syncMonsters(dt);
     this.syncPeople(dt);
+    this.syncVendors(dt);
     this.updateEggs(time);
     // living grounds: water ripples and flowing lava (flowing), glowing lava breathing
     if (this.flowTime) this.flowTime.value = time - (this.flowT0 ??= time); // from the start: small numbers for the shader
+    if (this.fireTime) this.fireTime.value = time - (this.fireT0 ??= time);
     for (const m of this.lavaMats ?? []) m.emissiveIntensity = 3 + Math.sin(time * 1.3) * 0.5 + Math.sin(time * 3.1) * 0.15;
     // the sun's shadows cover the square around the focus
     const c = this.sun.shadow.camera, s = this.shadowSize;
