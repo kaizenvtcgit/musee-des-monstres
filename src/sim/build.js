@@ -2,7 +2,7 @@ import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { rectsOf, containsTile, tilesOf, fitBox } from './enclosure.js';
-import { turns } from './facing.js';
+import { turns, faceToPath } from './facing.js';
 
 const BUILDING_DEFS = {
   decoration: { size: 1, price: BALANCE.decorationCost },
@@ -13,6 +13,9 @@ const BUILDING_DEFS = {
 };
 
 const fail = (reason) => ({ ok: false, reason });
+
+// The buildings that can be turned once placed (the stands, the shop, the garden decorations).
+export const ROTATABLE_BUILDINGS = new Set(['snack', 'souvenir', 'decoration']);
 
 // Tiles per side of a shelter (shelters of older saved games, without a size, are 2 x 2).
 export const shelterSize = (s) => (s && s.size) || 2;
@@ -180,6 +183,17 @@ export class Builder {
     this.buildings.set(id, b);
     this.#fillRect(tx, ty, x1, y1, id);
     return { ok: true, id };
+  }
+
+  // Turns a placed stand, shop or garden decoration a quarter turn (src/sim/facing.js). One placed before
+  // there was a choice starts from the way it was drawn: facing its path.
+  rotateBuilding(id) {
+    const b = this.buildings.get(id);
+    if (!b || !ROTATABLE_BUILDINGS.has(b.type)) return fail('cannotRotate');
+    const from = b.rot ?? faceToPath(this.grid, b.x0, b.y0, b.x1, b.y1);
+    b.rot = turns(from + 1);
+    this.grid.version++; // redraw
+    return { ok: true, id, rot: b.rot };
   }
 
   demolish(tx, ty) {

@@ -362,9 +362,10 @@ export class GameScene extends Phaser.Scene {
     if (this.tool.type === 'path') this.pathStart = tile; // a straight path, laid when let go
   }
 
-  // pointer over a tile (`leftDown`: the left button is held)
-  toolMove(tile, leftDown) {
-    if (this.tool.type === 'path' && !leftDown) this.pathStart = null;
+  // pointer over a tile (`leftDown`: the left button is held). The start of a path being dragged is kept
+  // until the button is let go (toolUp) or the drag called off (toolCancel): the 3D view also calls this
+  // right after toolDown, with leftDown false.
+  toolMove(tile, leftDown) { // eslint-disable-line no-unused-vars
     return this.ghostCells(tile);
   }
 

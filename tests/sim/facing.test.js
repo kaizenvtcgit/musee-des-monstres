@@ -53,3 +53,17 @@ describe('facing', () => {
     expect(v.x).toBeGreaterThan(s.cx - 1.5);
   });
 });
+
+describe('turning a placed stand', () => {
+  it('a quarter turn each time; one placed before the choice starts from facing its path', () => {
+    const grid = new Grid(20, 20);
+    const b = new Builder(grid, new Wallet(1e6));
+    b.placePath(4, 5); // left of the stand
+    const s = b.placeBuilding('snack', 5, 5); // no turn chosen
+    expect(b.rotateBuilding(s.id)).toMatchObject({ ok: true, rot: 2 }); // faced the path (1), now 2
+    expect(b.rotateBuilding(s.id).rot).toBe(3);
+    expect(b.rotateBuilding(s.id).rot).toBe(0);
+    const h = b.placeBuilding('hatchery', 10, 10);
+    expect(b.rotateBuilding(h.id).ok).toBe(false);
+  });
+});

@@ -55,6 +55,7 @@ export const fr = {
   'tool.decoration': 'Décoration',
   'tool.snack': 'Snack',
   'tool.rotate': 'Tourner (R)',
+  'building.rotate': 'Tourner',
   'tool.souvenir': 'Souvenirs',
   'tool.keeper': 'Gardien',
   'tool.demolish': 'Démolir',

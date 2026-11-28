@@ -8,6 +8,7 @@ import { OBJECTIVES } from '../sim/objectives.js';
 import { realKey } from './sprites.js';
 import { monsterTextureKey } from './textures.js';
 import { capacity, canBreed } from '../sim/breeding.js';
+import { ROTATABLE_BUILDINGS } from '../sim/build.js';
 import { eraseGame } from '../save/storage.js';
 
 const TOOLS = [
@@ -470,13 +471,19 @@ class UI {
       const stand = b ? standOf(b) : null;
       const pic = (stand && this.view3d?.park?.portrait(stand.model)) || this.img('snack');
       return `${close}<h3><img class="portrait" src="${pic}">${esc(stand ? t(`stand.${stand.id}`) : t('building.snack'))}</h3>
-        <div class="row">${esc(t('building.snack'))}</div>`;
+        <div class="row">${esc(t('building.snack'))}</div>${this.rotateRow(sel)}`;
     }
 
     if (sel.kind === 'building') {
-      return `${close}<h3><img class="portrait" src="${this.img(sel.type)}">${esc(t(`building.${sel.type}`))}</h3>`;
+      return `${close}<h3><img class="portrait" src="${this.img(sel.type)}">${esc(t(`building.${sel.type}`))}</h3>${this.rotateRow(sel)}`;
     }
     return null;
+  }
+
+  // The "Tourner" button of a stand, the shop or a garden decoration (a quarter turn each click).
+  rotateRow(sel) {
+    if (!ROTATABLE_BUILDINGS.has(sel.type)) return '';
+    return `<div class="row"><button data-action="rotate" data-id="${sel.id}">↻ ${esc(t('building.rotate'))}</button></div>`;
   }
 
   onPanel(e) {
@@ -504,6 +511,10 @@ class UI {
     }
     if (action === 'open') {
       this.selection = { kind: 'monster', id };
+    }
+    if (action === 'rotate') {
+      const r = w.builder.rotateBuilding(id);
+      if (!r.ok) this.error(r.reason);
     }
     this.refresh(true);
   }
