@@ -14,6 +14,7 @@ import { eraseGame } from '../save/storage.js';
 const TOOLS = [
   { type: 'select', label: 'tool.select', icon: 'visitor-0' },
   { type: 'path', label: 'tool.path', icon: 'tile-path', price: () => t('tool.perTile', { n: BALANCE.pathCost }) },
+  { type: 'bridge', label: 'tool.bridge', icon: 'tile-path', price: () => t('tool.perTile', { n: BALANCE.bridgeCostPerTile }) },
   { type: 'enclosure', label: 'tool.enclosure', icon: 'tile-forest', price: () => t('tool.perTile', { n: BALANCE.enclosureCostPerTile }) },
   { type: 'decoration', label: 'tool.decoration', icon: 'decoration', price: () => t('tool.price', { n: BALANCE.decorationCost }) },
   { type: 'snack', label: 'tool.snack', icon: 'snack', price: () => t('tool.price', { n: BALANCE.snackCost }) },

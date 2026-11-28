@@ -176,7 +176,7 @@ function chooseTarget(v, ctx) {
 
 function planPath(v, ctx) {
   // the tile we were heading to may have been demolished or built over: pick again
-  if (v.target.kind !== 'exit' && !ctx.grid.isPath(v.target.tile.tx, v.target.tile.ty)) {
+  if (v.target.kind !== 'exit' && !ctx.grid.isWalkable(v.target.tile.tx, v.target.tile.ty)) {
     v.target = null;
     chooseTarget(v, ctx);
   }
@@ -203,6 +203,7 @@ function canEnter(v, ctx, tile) {
   const t = ctx.grid.getTile(tile.tx, tile.ty);
   if (!t) return false;
   if (tile.tx === v.target.tile.tx && tile.ty === v.target.tile.ty && v.target.kind === 'exit') return t.occupant === null;
+  if (t.bridge) return true;
   if (t.occupant !== null) return false;
   return v.grass || t.ground === 'path';
 }
@@ -247,7 +248,9 @@ function arrive(v, ctx) {
     const e = ctx.builder.enclosures.get(target.id);
     const total = e ? enclosureAppeal(e, ctx) : null;
     if (total !== null) {
-      v.satisfaction = Math.min(1, v.satisfaction + total / 50);
+      // from a bridge, right above the monsters: more
+      const view = ctx.grid.isBridge(v.tile.tx, v.tile.ty) ? 1 + BALANCE.bridgeViewBonus : 1;
+      v.satisfaction = Math.min(1, v.satisfaction + (total / 50) * view);
       v.state = 'watching';
       v.timer = WATCH_SEC * (1 + decorCount(e) * BALANCE.decorWatch);
     } else {

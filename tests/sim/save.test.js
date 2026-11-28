@@ -118,3 +118,21 @@ describe('older saved games', () => {
     expect(count).toBe(9);
   });
 });
+
+describe('save / load bridges', () => {
+  it('bridges survive save and load', () => {
+    const w = createInitialWorld(42);
+    w.grid.setOccupant(10, 10, 'encX');
+    w.grid.setBridge(10, 10, 'brg9');
+    const loaded = deserializeWorld(JSON.parse(JSON.stringify(serializeWorld(w))));
+    expect(loaded.grid.getTile(10, 10).bridge).toBe('brg9');
+    expect(loaded.grid.getTile(11, 10).bridge).toBeNull();
+  });
+  it('old saves without bridge load with bridge null', () => {
+    const w = createInitialWorld(42);
+    const data = JSON.parse(JSON.stringify(serializeWorld(w)));
+    data.grid.tiles = data.grid.tiles.map(([g, o]) => [g, o]);
+    const loaded = deserializeWorld(data);
+    expect(loaded.grid.tiles.every((t) => t.bridge === null)).toBe(true);
+  });
+});
