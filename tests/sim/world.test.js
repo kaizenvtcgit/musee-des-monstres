@@ -195,3 +195,35 @@ describe('reputation and objectives', () => {
     expect(w.events.some((e) => e.type === 'objective' && e.id === 'species3')).toBe(true);
   });
 });
+
+describe('bridges in the world', () => {
+  it('a visitor on a removed bridge is put back on a stair', () => {
+    const w = createInitialWorld(7);
+    w.wallet.money = 100000;
+    w.builder.placeEnclosure(5, 5, 8, 7, 'lava');
+    w.builder.placePath(4, 6);
+    w.builder.placePath(9, 6);
+    const r = w.builder.placeBridge([4, 5, 6, 7, 8, 9].map((tx) => ({ tx, ty: 6 })));
+    expect(r.ok).toBe(true);
+    const v = { id: 'visX', pos: { x: 6, y: 6 }, tile: { tx: 6, ty: 6 }, path: [{ tx: 7, ty: 6 }] };
+    w.visitors.push(v);
+    w.builder.removeBridge(r.id);
+    expect(v.tile).toEqual({ tx: 4, ty: 6 });
+    expect(v.pos).toEqual({ x: 4, y: 6 });
+    expect(v.path).toBeNull();
+  });
+
+  it('bridges survive save and load', async () => {
+    const { serializeWorld, deserializeWorld } = await import('../../src/sim/save.js');
+    const w = createInitialWorld(7);
+    w.wallet.money = 100000;
+    w.builder.placeEnclosure(5, 5, 8, 7, 'lava');
+    w.builder.placePath(4, 6);
+    w.builder.placePath(9, 6);
+    const r = w.builder.placeBridge([4, 5, 6, 7, 8, 9].map((tx) => ({ tx, ty: 6 })));
+    const loaded = deserializeWorld(JSON.parse(JSON.stringify(serializeWorld(w))));
+    expect(loaded.builder.bridges.get(r.id).deck).toHaveLength(4);
+    expect(loaded.grid.getTile(4, 6).stair).toBe(r.id);
+    expect(loaded.grid.getTile(9, 6).stair).toBe(r.id);
+  });
+});

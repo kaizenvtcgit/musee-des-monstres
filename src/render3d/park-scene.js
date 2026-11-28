@@ -14,7 +14,10 @@ import { SHELTER_MODEL_SCALE } from '../render/shelterpath.js';
 import { HABITAT_FAMILY } from '../config/species.js';
 import { BALANCE } from '../config/balance.js';
 import { ENCLOSURE_DECOR, DECOR_SCALE } from '../config/decor.js';
+import { standOf } from '../config/stands.js';
+import { faceToPath, quarterAngle } from '../sim/facing.js';
 import { drawBubble } from '../render/bubbles.js';
+import { personHeight, pierTiles } from '../sim/bridge.js';
 import { Parking3D } from './parking3d.js';
 import { antiTile, lavaChannels, reliefGeometry, pathFringe, wallShade, groundDetails } from './grounds.js';
 import { RELIEF, terrainMaterial } from './terrain.js';
@@ -49,6 +52,52 @@ const CLIPS = {
 const REVERSED = { golem: ['walk'] };
 const VISITOR_MODELS = ['person-men-casual_2', 'person-women-casual', 'person-men-suit', 'person-women-formal'];
 const KEEPER_MODEL = 'person-men-worker';
+const VENDOR_MODEL = 'vendor-snack';
+const VENDOR_HEIGHT = 1.65;
+const VENDOR_CHORES = ['PrepareFood', 'CleanCounter', 'Restock', 'LookAround', 'Stretch', 'Bored'];
+
+// Flames (see ParkScene.addFire): value noise rising through the quad, shaped into tongues hot at the base.
+const FIRE_VERTEX = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+const FIRE_FRAGMENT = /* glsl */ `
+uniform float uTime;
+uniform float uSeed;
+uniform float uLayer;
+varying vec2 vUv;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+  return v;
+}
+void main() {
+  vec2 uv = vUv;
+  float t = uTime * (1.0 + uLayer * 0.35) + uSeed;
+  // the air sways the flames sideways a little, more at their tips
+  float sway = (fbm(vec2(uv.y * 2.0 - t * 0.7, uSeed)) - 0.5) * 0.25 * uv.y;
+  vec2 p = vec2((uv.x + sway) * 4.0, uv.y * 2.2 - t * 2.4);
+  float n = fbm(p) * 0.65 + fbm(p * 2.1 + 3.7) * 0.35;
+  // tongues: tall here, short there, changing slowly
+  float tongue = 0.55 + 0.45 * fbm(vec2(uv.x * 6.0 + uSeed, t * 0.5));
+  float heat = n * 1.7 * (1.0 - uv.y / tongue) + (1.0 - uv.y) * 0.25;
+  // soft sides
+  heat *= smoothstep(0.0, 0.18, uv.x) * smoothstep(1.0, 0.82, uv.x);
+  // the embers' glow at the base, breathing
+  heat += smoothstep(0.12, 0.0, uv.y) * (0.35 + 0.15 * sin(t * 3.0 + uv.x * 9.0)) * smoothstep(0.0, 0.1, uv.x) * smoothstep(1.0, 0.9, uv.x);
+  float a = smoothstep(0.25, 0.6, heat);
+  vec3 col = mix(vec3(0.55, 0.06, 0.0), vec3(1.0, 0.42, 0.04), smoothstep(0.3, 0.7, heat));
+  col = mix(col, vec3(1.0, 0.86, 0.45), smoothstep(0.75, 1.1, heat));
+  gl_FragColor = vec4(col * a * (1.4 - uLayer * 0.4), a);
+}`;
 
 // Ground textures (src/assets/3d/tex, CC0 from ambientCG: name, name-n normals, name-r AO (R) + roughness (G)):
 // metres covered by one copy of the texture, tint.
@@ -88,6 +137,7 @@ export class ParkScene {
     this.scene = scene;
     this.people = new Map(); // id -> { obj, mixer, actions, current, last }
     this.monsters = new Map();
+    this.vendors = new Map(); // snack building id -> its vendor { obj, mixer, actions, current, until }
     this.models = new Map(); // file -> Promise<{ scene, animations, box }>
     this.texCache = new Map();
     this.lowTex = matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency ?? 8) <= 4;
@@ -112,6 +162,7 @@ export class ParkScene {
     this.buildLights();
     this.buildGround();
     this.buildWalls();
+    this.buildBridges();
     this.buildBuildings();
     this.buildDecor();
     this.parking3d = new Parking3D(this, T); // the road, and the car park with its cars
@@ -425,7 +476,8 @@ export class ParkScene {
           const ox = tx + dx, oy = ty + dy;
           if (containsTile(e, ox, oy)) continue;
           const out = grid.inBounds(ox, oy) && grid.getTile(ox, oy);
-          const glass = !!out && out.ground === 'path' && !out.occupant;
+          // stone where a bridge goes over the wall (its stairs end there)
+          const glass = !!out && out.ground === 'path' && !out.occupant && !grid.isBridge(tx, ty);
           const x = (tx + dx / 2) * T, z = (ty + dy / 2) * T, alongX = dy !== 0;
           segs.push({ x, z, alongX, glass });
           // the two ends of the segment: posts
@@ -512,6 +564,94 @@ export class ParkScene {
     railI.count = ri;
   }
 
+  // ---------------------------------------------------------------- bridges
+
+  // The bridges over the enclosures (src/sim/bridge.js): a plank deck high enough for the tallest monster,
+  // railings along its free sides, stone piers every other tile, a flight of steps down at each end.
+  buildBridges() {
+    const old = this.bridgeGroup;
+    if (old) {
+      this.s3.remove(old);
+      old.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+    }
+    const group = (this.bridgeGroup = new THREE.Group());
+    this.s3.add(group);
+    const { builder } = this.world;
+    if (!builder.bridges.size) return;
+    const D = BALANCE.bridgeDeckHeight, DECK = 0.25, RAIL_H = 1.05, POST = 0.12, STEPS = 12;
+    const planks = this.stripes('#8a5a36', '#7a4e2e');
+    planks.wrapS = planks.wrapT = THREE.RepeatWrapping;
+    planks.repeat.set(1.5, 1);
+    const wood = new THREE.MeshStandardMaterial({ map: planks, roughness: 0.85 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x5b3a22, roughness: 0.8 });
+    const stoneTex = this.tex('wall', true, 'wall-pier');
+    stoneTex.repeat.set(0.5, 1.6);
+    const stone = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0xe6dccb, roughness: 0.9 });
+    const box = (w, h, d, mat, x, y, z, rot = 0) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      m.rotation.y = rot;
+      m.castShadow = m.receiveShadow = true;
+      group.add(m);
+      return m;
+    };
+    const decorAt = (tx, ty) => [...builder.enclosures.values()].some((e) => (e.decor ?? []).some((d) => d.tx === tx && d.ty === ty));
+    for (const b of builder.bridges.values()) {
+      const onDeck = (tx, ty) => b.deck.some((c) => c.tx === tx && c.ty === ty);
+      const stairAt = (tx, ty) => b.stairs.some((s) => s.tx === tx && s.ty === ty);
+      // stone piers (not through a decoration; the monsters walk around them)
+      for (const { tx, ty } of pierTiles(b, decorAt)) box(0.55, D - DECK, 0.55, stone, tx * T, (D - DECK) / 2, ty * T);
+      for (const { tx, ty } of b.deck) {
+        const x = tx * T, z = ty * T;
+        box(T, DECK, T, wood, x, D - DECK / 2, z, (tx + ty) % 2 ? 0 : Math.PI / 2);
+        // railings on the sides with no deck or stairs beyond
+        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+          if (onDeck(tx + dx, ty + dy) || stairAt(tx + dx, ty + dy)) continue;
+          const ex = x + (dx * T) / 2 * 0.94, ez = z + (dy * T) / 2 * 0.94, rot = dy ? 0 : Math.PI / 2;
+          box(T, 0.08, 0.1, dark, ex, D + RAIL_H, ez, rot);
+          box(T, 0.06, 0.06, dark, ex, D + RAIL_H / 2, ez, rot);
+          for (const s of [-0.5, 0, 0.5]) {
+            const px = dy ? ex + s * T * 0.96 : ex, pz = dy ? ez : ez + s * T * 0.96;
+            box(POST, RAIL_H, POST, dark, px, D + RAIL_H / 2, pz);
+          }
+        }
+      }
+      // the steps, from the ground up to the deck, with a sloping handrail on each side
+      for (const s of b.stairs) {
+        const rot = s.dy ? 0 : Math.PI / 2;
+        for (let i = 0; i < STEPS; i++) {
+          const u = -0.5 + (i + 0.5) / STEPS, h = (D * (i + 1)) / STEPS;
+          const x = (s.tx + s.dx * u) * T, z = (s.ty + s.dy * u) * T;
+          box(T * 0.8, h, T / STEPS, i % 2 ? wood : dark, x, h / 2, z, rot);
+        }
+        const len = Math.hypot(T, D), slope = Math.atan2(D, T);
+        for (const side of [-1, 1]) {
+          const ox = s.dy ? side * T * 0.42 : 0, oz = s.dx ? side * T * 0.42 : 0;
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, len), dark);
+          rail.position.set(s.tx * T + ox, D / 2 + RAIL_H, s.ty * T + oz);
+          rail.rotation.order = 'YXZ';
+          rail.rotation.y = Math.atan2(s.dx, s.dy);
+          rail.rotation.x = -slope;
+          rail.castShadow = true;
+          group.add(rail);
+          for (const u of [-0.45, 0.45]) {
+            const h = D * (u + 0.5);
+            box(POST, RAIL_H, POST, dark, (s.tx + s.dx * u) * T + ox, h + RAIL_H / 2, (s.ty + s.dy * u) * T + oz);
+          }
+        }
+      }
+    }
+  }
+
+  // How high a visitor or keeper walks: on a bridge, up or down its stairs (src/sim/bridge.js, personHeight).
+  heightOf(p) {
+    this.personH ??= new Map();
+    if (this.personH.size > 500) this.personH.clear();
+    const h = personHeight(this.world.builder.bridges.values(), p, this.personH.get(p.id) ?? 0);
+    this.personH.set(p.id, h);
+    return h;
+  }
+
   // ---------------------------------------------------------------- buildings and scenery
 
   stripes(a, b) {
@@ -533,22 +673,19 @@ export class ParkScene {
     for (const b of this.world.builder.buildings.values()) {
       const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
       if (b.type === 'snack') {
-        // two stands, the one picked in the Snack menu: the Kraken's waffles or the Dragon's grill (older games:
-        // picked from the building id)
-        const n = Number(String(b.id).replace(/\D/g, '')) || 0;
-        const waffles = b.look ? b.look === 'waffles' : n % 2 === 1;
-        // (the waffle stand's counter is on its +z side, the grill's on its +x side)
-        const [model, front] = waffles ? ['stand-kraken-waffles', 0] : ['stand-dragon-grill', -Math.PI / 2];
+        // the stand the player chose in the Snack menu: the Kraken's waffles or the Dragon's grill (src/config/stands.js)
+        const { model, front, fire } = standOf(b);
         // a real kiosk next to the visitors: counter about waist high, the edge of its roof about 2.3 m up
         // (3.1 m across: it overhangs its tile a little)
-        this.placeModel(group, model, cx, cz, 3.1, this.faceToPath(b) + front, b.id);
+        this.placeModel(group, model, cx, cz, 3.1, this.facing(b) + front, b.id);
+        if (fire) this.addFire(group, cx, cz, this.facing(b) + front, fire);
       } else if (b.type === 'atm') {
         // the cash machine (src/assets/3d/atm.glb.json, from models/parking/ATM.fbx): 0.67 m wide, its screen
         // toward the path
         this.placeModel(group, 'atm', cx, cz, 0.67, this.faceToPath(b), b.id);
       } else if (b.type === 'souvenir') {
         // the same: the edge of its roof about 2.4 m up, its dragon on top about 3.8 m
-        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 3.25, this.faceToPath(b), b.id);
+        this.placeModel(group, 'fabrique-a-monstres', cx, cz, 3.25, this.facing(b), b.id);
       } else if (b.type === 'hatchery') {
         this.placeIncubator(group, cx, cz, b.id);
       } else if (b.type === 'expeditionBase') {
@@ -559,7 +696,7 @@ export class ParkScene {
         // a garden decoration: the one picked in the Furniture menu (older games: picked from its id)
         const n = Number(String(b.id).replace(/\D/g, '')) || 0;
         const v = GARDEN.find((g) => g.name === b.look) ?? GARDEN[n % GARDEN.length];
-        const rot = v.facePath ? this.faceToPath(b) : (n * 2.39996) % (Math.PI * 2);
+        const rot = b.rot != null ? quarterAngle(b.rot) : v.facePath ? this.faceToPath(b) : (n * 2.39996) % (Math.PI * 2);
         const g = garden.get(v.name) ?? garden.set(v.name, { v, items: [], ids: [] }).get(v.name);
         g.items.push({ cx, cz, rot });
         g.ids.push(b.id);
@@ -582,6 +719,34 @@ export class ParkScene {
         group.add(instanceGroup(tpl, mats, { base: v.decor ? tpl.parent : null, ids }));
       }
     }).catch((err) => console.error(err));
+  }
+
+  // Live flames in a stand's oven (the Dragon's mouth): two flat layers of fire, one a little in front of the
+  // other, drawn by a shader (rising noise, hot at the base, tongues licking up) and moved by the shared clock
+  // this.fireTime (see update). `f`: { x, y (its base), z, w, h } in metres in the stand's frame (src/config/stands.js).
+  addFire(group, cx, cz, rot, f) {
+    this.fireTime ??= { value: 0 };
+    this.fireGeo ??= new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0); // its base at y = 0
+    const c = Math.cos(rot), s = Math.sin(rot);
+    for (const [k, seed] of [[0, 0], [1, 7.3]]) {
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: this.fireTime, uSeed: { value: seed }, uLayer: { value: k } },
+        vertexShader: FIRE_VERTEX,
+        fragmentShader: FIRE_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(this.fireGeo, mat);
+      // the front layer: a little narrower and lower, closer to the visitors
+      const dz = f.z + k * 0.06, w = f.w * (1 - k * 0.15), h = f.h * (1 - k * 0.25);
+      mesh.position.set(cx + f.x * c + dz * s, f.y, cz - f.x * s + dz * c);
+      mesh.rotation.y = rot;
+      mesh.scale.set(w, h, 1);
+      mesh.renderOrder = 4;
+      group.add(mesh);
+    }
   }
 
   // The props (Poly Haven models) and the enclosure decorations, loaded once (see scenery.js).
@@ -613,14 +778,16 @@ export class ParkScene {
         if (!ENCLOSURE_DECOR[d.type]) continue;
         // the variant, turned differently, picked from the tile (as the menu icons, render-decor.mjs: 0 or 140 degrees)
         const v = (d.tx * 7 + d.ty * 13) % 2;
-        add(d.type, { tx: d.tx, ty: d.ty, rot: v ? THREE.MathUtils.degToRad(140) : 0, y, k: DECOR_SCALE[d.type] });
+        // (turned by the player when placed: d.rot)
+        const rot = d.rot != null ? quarterAngle(d.rot) : v ? THREE.MathUtils.degToRad(140) : 0;
+        add(d.type, { tx: d.tx, ty: d.ty, rot, y, k: DECOR_SCALE[d.type] });
       }
       const sh = e.shelter;
       // centred on its n x n tiles (3, or 2 for an old one), its entrance toward +y (+z here): a model of
       // shelters.glb (made for 3 x 3 tiles, models/blender/musee-decors.blend), scaled to its monster
       if (sh) {
         const n = shelterSize(sh);
-        shelters.push({ name: `shelter-${sh.family}`, tx: sh.tx + (n - 1) / 2, ty: sh.ty + (n - 1) / 2, y, k: (SHELTER_MODEL_SCALE[sh.family] ?? 0.55) * (n / 3) });
+        shelters.push({ name: `shelter-${sh.family}`, tx: sh.tx + (n - 1) / 2, ty: sh.ty + (n - 1) / 2, y, k: (SHELTER_MODEL_SCALE[sh.family] ?? 0.55) * (n / 3), rot: quarterAngle(sh.rot ?? 0) });
       }
     }
     if (shelters.length) {
@@ -633,6 +800,7 @@ export class ParkScene {
           const obj = node.clone(true);
           obj.position.set(it.tx * T, it.y(0), it.ty * T);
           obj.scale.setScalar(T * it.k);
+          obj.rotation.y = it.rot;
           group.add(obj);
         }
       }).catch((err) => console.error(err));
@@ -687,20 +855,12 @@ export class ParkScene {
 
   // The turn (radians) that points a building's front (+z of its model) toward a path next to it.
   faceToPath(b) {
-    const { grid } = this.world;
-    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
-    let best = null;
-    for (let y = b.y0 - 1; y <= b.y1 + 1; y++) {
-      for (let x = b.x0 - 1; x <= b.x1 + 1; x++) {
-        if (!grid.inBounds(x, y) || !grid.isPath(x, y)) continue;
-        const d = Math.hypot(x - cx, y - cy);
-        if (!best || d < best.d) best = { d, dx: x - cx, dy: y - cy };
-      }
-    }
-    if (!best) return 0;
-    // keep to the four sides
-    const ang = Math.atan2(best.dx, best.dy);
-    return Math.round(ang / (Math.PI / 2)) * (Math.PI / 2);
+    return quarterAngle(faceToPath(this.world.grid, b.x0, b.y0, b.x1, b.y1));
+  }
+
+  // The turn of a building: the one chosen when it was placed, else facing its path (older saved games).
+  facing(b) {
+    return b.rot != null ? quarterAngle(b.rot) : this.faceToPath(b);
   }
 
   // The incubator (models/incubator.glb, 5 places for eggs: nodes EggSlot_01..05) on its 2 x 2 tiles.
@@ -1161,13 +1321,76 @@ export class ParkScene {
     for (const v of this.world.visitors) {
       if (v.state === 'gone' || !v.pos || !near(v.pos.x, v.pos.y)) continue;
       const k = [...v.id].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
-      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, model: this.modelOf({ kind: 'visitor', id: v.id }), walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
+      items.push({ id: v.id, kind: 'visitor', x: v.pos.x, y: v.pos.y, y3: this.heightOf(v), model: this.modelOf({ kind: 'visitor', id: v.id }), walk: v.state === 'fleeing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.62 + (k % 7) * 0.04, ...this.follow(v.id) });
     }
     for (const kp of this.world.keepers) {
       if (!kp.pos || !near(kp.pos.x, kp.pos.y)) continue;
-      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8, ...this.follow(kp.id), icon: kp.state === 'chasing' ? 'bubble-alert' : null });
+      items.push({ id: kp.id, kind: 'keeper', x: kp.pos.x, y: kp.pos.y, y3: this.heightOf(kp), model: KEEPER_MODEL, walk: kp.state === 'chasing' ? 'Run' : 'Walk', idle: 'Idle', h: 1.8, ...this.follow(kp.id), icon: kp.state === 'chasing' ? 'bubble-alert' : null });
     }
     this.sync(this.people, items, (it) => this.spawn(it.model, it.h), dt);
+  }
+
+  // The vendor behind the counter of each snack stand (src/assets/3d/vendor-snack.glb.json, its clips:
+  // Serve, CashRegister, Greeting, Idle and small chores). Serves while a visitor buys at the stand, greets
+  // those walking up to it, otherwise waits and now and then does a chore. Not clickable.
+  syncVendors(dt) {
+    const px = this.focus.x, pz = this.focus.z, r = this.viewPeople;
+    const seen = new Set();
+    for (const b of this.world.builder.buildings.values()) {
+      if (b.type !== 'snack') continue;
+      const stand = standOf(b);
+      const cx = ((b.x0 + b.x1) / 2) * T, cz = ((b.y0 + b.y1) / 2) * T;
+      if (Math.hypot(cx - px, cz - pz) > r) continue;
+      seen.add(b.id);
+      let e = this.vendors.get(b.id);
+      if (!e) {
+        e = { loading: true };
+        this.vendors.set(b.id, e);
+        this.spawn(VENDOR_MODEL, VENDOR_HEIGHT).then((body) => {
+          if (this.vendors.get(b.id) !== e) return;
+          Object.assign(e, body, { loading: false, until: 0 });
+          for (const a of Object.values(e.actions)) {
+            if (a.getClip().name !== 'Idle') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+          }
+          this.s3.add(e.obj);
+        }).catch(() => { e.failed = true; });
+        continue;
+      }
+      if (e.loading || e.failed) continue;
+      // at its counter (src/config/stands.js), facing the visitors
+      const rot = this.facing(b) + stand.front, { x = 0, y = 0, z = 0, turn = 0 } = stand.vendor ?? {};
+      const c = Math.cos(rot), s = Math.sin(rot);
+      e.obj.position.set(cx + x * c + z * s, y, cz - x * s + z * c);
+      e.obj.rotation.y = rot + turn;
+      this.vendorAct(e, b, cx, cz);
+      e.mixer.update(dt);
+    }
+    for (const [id, e] of this.vendors) {
+      if (seen.has(id)) continue;
+      if (e.obj) this.s3.remove(e.obj);
+      this.vendors.delete(id);
+    }
+  }
+
+  // What a vendor does now (see syncVendors). A clip, once started, plays to its end.
+  vendorAct(e, b, cx, cz) {
+    const now = performance.now() / 1000;
+    let buying = false, coming = false;
+    for (const v of this.world.visitors) {
+      if (v.target?.id !== b.id || !v.pos) continue;
+      if (v.state === 'shopping') buying = true;
+      else if (v.state === 'walking' && Math.hypot(v.pos.x * T - cx, v.pos.y * T - cz) < 2.2 * T) coming = true;
+    }
+    if (now < e.until) return;
+    let next;
+    if (buying) next = e.current === 'Serve' ? 'CashRegister' : 'Serve';
+    else if (coming && e.current !== 'Greeting' && e.current !== 'CashRegister') next = 'Greeting';
+    else if (e.current !== 'Idle') next = 'Idle';
+    else next = VENDOR_CHORES[Math.floor(Math.random() * VENDOR_CHORES.length)];
+    this.play(e, next, 0.35);
+    const clip = e.actions[next]?.getClip();
+    // idle: 4 to 10 s before the next chore; any other clip: until its end
+    e.until = now + (next === 'Idle' ? 4 + Math.random() * 6 : (clip?.duration ?? 2) - 0.3);
   }
 
   // ---------------------------------------------------------------- picking
@@ -1230,6 +1453,25 @@ export class ParkScene {
   // ---------------------------------------------------------------- placement preview
 
   // Coloured squares on the tiles of the preview: [{ tx, ty, ok }], green where possible, red if not.
+  // An arrow on the ground, from the centre of what is being placed toward its front (cells.arrow, GameScene).
+  showArrow(a) {
+    if (!this.arrow) {
+      const s = new THREE.Shape();
+      s.moveTo(-0.12, -0.35); s.lineTo(0.12, -0.35); s.lineTo(0.12, 0.05); s.lineTo(0.3, 0.05);
+      s.lineTo(0, 0.45); s.lineTo(-0.3, 0.05); s.lineTo(-0.12, 0.05); s.closePath();
+      const geo = new THREE.ShapeGeometry(s).rotateX(-Math.PI / 2); // pointing toward -z: turned below
+      geo.rotateY(Math.PI); // now toward +z (+y in tiles: a turn of 0)
+      this.arrow = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, fog: false }));
+      this.arrow.renderOrder = 5;
+      this.s3.add(this.arrow);
+    }
+    this.arrow.visible = !!a;
+    if (!a) return;
+    this.arrow.position.set(a.x * T, 0.09, a.y * T);
+    this.arrow.rotation.y = quarterAngle(a.q);
+    this.arrow.scale.setScalar(T * Math.max(1, a.size * 0.8));
+  }
+
   showGhost(cells) {
     const n = cells?.length ?? 0;
     if (!this.ghost || this.ghost.instanceMatrix.count < n) {
@@ -1251,6 +1493,7 @@ export class ParkScene {
       this.ghost.setColorAt(i, ok ? good : bad);
     }
     this.ghost.count = n;
+    this.showArrow(cells?.arrow ?? null);
     this.ghost.instanceMatrix.needsUpdate = true;
     if (this.ghost.instanceColor) this.ghost.instanceColor.needsUpdate = true;
   }
@@ -1264,15 +1507,18 @@ export class ParkScene {
       this.lastGrid = this.world.grid.version;
       this.buildGround();
       this.buildWalls();
+      this.buildBridges();
       this.buildBuildings();
       this.buildDecor();
     }
     this.syncMonsters(dt);
     this.syncPeople(dt);
+    this.syncVendors(dt);
     this.parking3d.update(dt);
     this.updateEggs(time);
     // living grounds: water ripples and flowing lava (flowing), glowing lava breathing
     if (this.flowTime) this.flowTime.value = time - (this.flowT0 ??= time); // from the start: small numbers for the shader
+    if (this.fireTime) this.fireTime.value = time - (this.fireT0 ??= time);
     for (const m of this.lavaMats ?? []) m.emissiveIntensity = 3 + Math.sin(time * 1.3) * 0.5 + Math.sin(time * 3.1) * 0.15;
     // the sun's shadows cover the square around the focus
     const c = this.sun.shadow.camera, s = this.shadowSize;

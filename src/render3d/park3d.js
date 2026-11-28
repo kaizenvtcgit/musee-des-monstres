@@ -436,6 +436,10 @@ class Park3D {
         this.modes[this.mode]?.onEscape();
         return;
       }
+      if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey && this.ui.rotateTool?.()) {
+        e.preventDefault();
+        return;
+      }
       this.keys.add(e.code);
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     };

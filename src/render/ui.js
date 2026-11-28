@@ -3,16 +3,19 @@ import { t } from '../i18n/index.js';
 import { BALANCE } from '../config/balance.js';
 import { SPECIES, LOCATIONS, HABITAT_FAMILIES, offeredHabitatsOfFamily } from '../config/species.js';
 import { ENCLOSURE_DECOR, decorForHabitat, SHELTERS } from '../config/decor.js';
+import { standOf } from '../config/stands.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { realKey } from './sprites.js';
 import { PLACES } from '../sim/parking.js';
 import { monsterTextureKey } from './textures.js';
 import { capacity, canBreed } from '../sim/breeding.js';
+import { ROTATABLE_BUILDINGS } from '../sim/build.js';
 import { eraseGame } from '../save/storage.js';
 
 const TOOLS = [
   { type: 'select', label: 'tool.select', icon: 'visitor-0' },
   { type: 'path', label: 'tool.path', icon: 'tile-path', price: () => t('tool.perTile', { n: BALANCE.pathCost }) },
+  { type: 'bridge', label: 'tool.bridge', icon: 'tile-path', price: () => t('tool.perTile', { n: BALANCE.bridgeCostPerTile }) },
   { type: 'enclosure', label: 'tool.enclosure', icon: 'tile-forest', price: () => t('tool.perTile', { n: BALANCE.enclosureCostPerTile }) },
   { type: 'decoration', label: 'tool.decoration', icon: 'decoration', price: () => t('tool.from', { n: 100 }) },
   { type: 'furniture', label: 'tool.furniture', icon: 'furniture', price: () => t('tool.from', { n: BALANCE.decorationCost }) },
@@ -68,6 +71,7 @@ class UI {
       <div id="shop" class="card"></div>
       <div id="toolbar" class="card"></div>
       <div id="hint" class="card" style="display:none"></div>
+      <button id="rotate" class="card" style="display:none" title="R">↻ ${esc(t('tool.rotate'))}</button>
       <div id="help" class="card">${esc(t('hud.help'))}</div>
       ${testMode ? `<div id="testbadge" class="card" title="${esc(t('test.help'))}">${esc(t('test.badge'))}</div>` : ''}`;
     this.el = (id) => this.root.querySelector(`#${id}`);
@@ -77,6 +81,7 @@ class UI {
     this.el('habitats').addEventListener('pointerdown', (e) => this.onHabitat(e));
     this.el('decors').addEventListener('pointerdown', (e) => this.onDecor(e));
     this.el('shop').addEventListener('pointerdown', (e) => this.onShop(e));
+    this.el('rotate').addEventListener('pointerdown', (e) => { e.stopPropagation(); this.rotateTool(); });
     for (const id of ['hud', 'panel', 'toolbar', 'habitats', 'decors', 'shop', 'objectives']) {
       this.el(id).addEventListener('wheel', (e) => e.stopPropagation());
     }
@@ -164,7 +169,17 @@ class UI {
     if (tool.type === 'atm') hint = t('furniture.hint', { name: t('furniture.atm') });
     if (tool.type === 'snack' && tool.look) hint = t('furniture.hint', { name: t(`snack.${tool.look}`) });
     if (tool.type === 'decor') hint = t('decor.hint', { habitat: t(`habitat.${tool.habitat}`).toLowerCase(), name: t(`decor.${tool.decor}`) });
+    if (tool.type === 'snack' && tool.variant) hint = t('stand.hint', { name: t(`stand.${tool.variant}`) });
+    // what is being placed can be turned (R or this button)
+    this.el('rotate').style.display = this.scene?.constructor.ROTATABLE?.has(tool.type) ? 'block' : 'none';
     this.hint(hint);
+  }
+
+  // A quarter turn more for what is being placed (R or the "Tourner" button); false when the tool turns nothing.
+  rotateTool() {
+    if (!this.scene?.constructor.ROTATABLE?.has(this.tool?.type)) return false;
+    this.setTool({ ...this.tool, rot: this.scene.nextTurns() });
+    return true;
   }
 
   onToolbar(e) {
@@ -205,7 +220,8 @@ class UI {
     const btn = e.target.closest('button[data-thing]');
     if (!btn) return;
     const k = btn.dataset.thing;
-    if (SNACKS.includes(k)) this.setTool({ type: 'snack', look: k });
+    // a snack: one of the stands of src/config/stands.js (its vendor, its fire), picked by its look
+    if (SNACKS.includes(k)) this.setTool({ type: 'snack', look: k, variant: standOf({ look: k }).id });
     else if (k === 'atm') this.setTool({ type: 'atm' });
     else this.setTool({ type: 'decoration', look: k });
   }
@@ -486,14 +502,27 @@ class UI {
       return `${close}<h3><img class="portrait" src="${this.img('atm')}">${esc(t('building.atm'))}</h3>
         <div class="row">${esc(t('atm.effect', { n: Math.round((BALANCE.atmSpendBonus - 1) * 100) }))}</div>`;
     }
+    if (sel.kind === 'building' && sel.type === 'snack') {
+      const b = w.builder.buildings.get(sel.id);
+      const stand = b ? standOf(b) : null;
+      const pic = (stand && this.view3d?.park?.portrait(stand.model)) || this.img('snack');
+      return `${close}<h3><img class="portrait" src="${pic}">${esc(stand ? t(`stand.${stand.id}`) : t('building.snack'))}</h3>
+        <div class="row">${esc(t('building.snack'))}</div>${this.rotateRow(sel)}`;
+    }
     if (sel.kind === 'building') {
-      // a garden decoration or a snack: the one picked in its menu
+      // a garden decoration: the one picked in the Furniture menu
       const look = w.builder.buildings.get(sel.id)?.look;
-      const name = look ? t(sel.type === 'snack' ? `snack.${look}` : `furniture.${look}`) : t(`building.${sel.type}`);
+      const name = look ? t(`furniture.${look}`) : t(`building.${sel.type}`);
       const pic = (look && this.view3d?.thingPortrait(look)) || this.img(sel.type);
-      return `${close}<h3><img class="portrait" src="${pic}">${esc(name)}</h3>`;
+      return `${close}<h3><img class="portrait" src="${pic}">${esc(name)}</h3>${this.rotateRow(sel)}`;
     }
     return null;
+  }
+
+  // The "Tourner" button of a stand, the shop or a garden decoration (a quarter turn each click).
+  rotateRow(sel) {
+    if (!ROTATABLE_BUILDINGS.has(sel.type)) return '';
+    return `<div class="row"><button data-action="rotate" data-id="${sel.id}">↻ ${esc(t('building.rotate'))}</button></div>`;
   }
 
   onPanel(e) {
@@ -525,6 +554,10 @@ class UI {
     }
     if (action === 'open') {
       this.selection = { kind: 'monster', id };
+    }
+    if (action === 'rotate') {
+      const r = w.builder.rotateBuilding(id);
+      if (!r.ok) this.error(r.reason);
     }
     this.refresh(true);
   }

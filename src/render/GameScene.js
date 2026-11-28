@@ -11,6 +11,8 @@ import { shelterSpots, stepShelterVisit, shelterRadius } from './shelterpath.js'
 import { canStepOver } from './stepover.js';
 import { enclosurePrice, shelterSize } from '../sim/build.js';
 import { t as tr } from '../i18n/index.js';
+import { faceToPath } from '../sim/facing.js';
+import { traceToward, checkBridge, pierTiles } from '../sim/bridge.js';
 import { BALANCE } from '../config/balance.js';
 import { Sounds } from './sound.js';
 import { ENCLOSURE_DECOR } from '../config/decor.js';
@@ -32,6 +34,7 @@ const IDLE_ACTION_GAP = [4, 12];
 // Footprint of each monster on the ground (tile units), used to keep them from overlapping.
 const MONSTER_RADIUS = { dragonnet: 0.6, kraken: 0.6, spectre: 0.4, golem: 0.45, yeti: 0.45 };
 const fmtCost = (n) => Math.round(n).toLocaleString('fr-FR');
+const PIER_RADIUS = 0.2; // tiles: a bridge pier is 0.55 m across, a tile 2.5 m
 
 // The hidden scene that runs the game (Phaser drives the frames): it ticks the World, decides what every
 // monster, visitor and keeper does and plays (a Phaser animation on an empty texture: its key and progress
@@ -93,6 +96,11 @@ export class GameScene extends Phaser.Scene {
     const sh = e.shelter;
     const shN = shelterSize(sh), shHalf = (shN - 1) / 2;
     if (sh) others.push({ x: sh.tx + shHalf, y: sh.ty + shHalf, r: shelterRadius(sh, shN) });
+    // the stone piers of the bridges over it
+    const decorAt = (tx, ty) => (e.decor ?? []).some((d) => d.tx === tx && d.ty === ty);
+    for (const b of this.world.builder.bridges.values()) {
+      for (const p of pierTiles(b, decorAt)) if (containsTile(e, p.tx, p.ty)) others.push({ x: p.tx, y: p.ty, r: PIER_RADIUS });
+    }
     // its enclosure was just merged into this one: it keeps walking from where it is
     if (entry.w && entry.wEnc !== e.id && !this.world.builder.enclosures.has(entry.wEnc)) entry.wEnc = e.id;
     if (!entry.w || entry.wEnc !== e.id) {
@@ -363,11 +371,14 @@ export class GameScene extends Phaser.Scene {
   toolDown(tile) {
     if (this.tool.type === 'enclosure') this.dragStart = tile;
     if (this.tool.type === 'path') this.pathStart = tile; // a straight path, laid when let go
+    if (this.tool.type === 'bridge') this.bridgeTrace = [{ tx: tile.tx, ty: tile.ty }]; // drawn tile by tile
   }
 
-  // pointer over a tile (`leftDown`: the left button is held)
+  // pointer over a tile (`leftDown`: the left button is held). The start of a path being dragged is kept
+  // until the button is let go (toolUp) or the drag called off (toolCancel): the 3D view also calls this
+  // right after toolDown, with leftDown false.
   toolMove(tile, leftDown) {
-    if (this.tool.type === 'path' && !leftDown) this.pathStart = null;
+    if (this.tool.type === 'bridge' && leftDown && this.bridgeTrace) this.bridgeTrace = traceToward(this.bridgeTrace, tile);
     return this.ghostCells(tile);
   }
 
@@ -375,6 +386,7 @@ export class GameScene extends Phaser.Scene {
   toolCancel() {
     this.dragStart = null;
     this.pathStart = null;
+    this.bridgeTrace = null;
     this.ui.hint(null);
   }
 
@@ -411,22 +423,27 @@ export class GameScene extends Phaser.Scene {
         this.pathStart = null;
         this.ui.hint(null);
         break;
+      case 'bridge':
+        if (this.bridgeTrace) this.report(b.placeBridge(traceToward(this.bridgeTrace, tile)));
+        this.bridgeTrace = null;
+        this.ui.hint(null);
+        break;
       case 'enclosure': {
         if (this.dragStart) this.report(b.placeEnclosure(this.dragStart.tx, this.dragStart.ty, tile.tx, tile.ty, this.tool.habitat));
         this.dragStart = null;
         break;
       }
       case 'decor':
-        this.report(b.placeDecor(tile.tx, tile.ty, this.tool.decor));
+        this.report(b.placeDecor(tile.tx, tile.ty, this.tool.decor, this.tool.rot));
         break;
       case 'shelter':
-        this.report(b.placeShelter(tile.tx, tile.ty));
+        this.report(b.placeShelter(tile.tx, tile.ty, this.tool.rot ?? 0));
         break;
       case 'decoration':
       case 'snack':
       case 'souvenir':
       case 'atm':
-        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty, { look: this.tool.look }));
+        this.report(b.placeBuilding(this.tool.type, tile.tx, tile.ty, { variant: this.tool.variant, look: this.tool.look, rot: this.placeTurns(tile) }));
         break;
       case 'demolish':
         if (isOnParking(world.parking, tile.tx, tile.ty)) this.report(world.demolishParking());
@@ -505,13 +522,44 @@ export class GameScene extends Phaser.Scene {
     if (bld) this.ui.select({ kind: 'building', id: bld.id, type: bld.type });
   }
 
+  // ---- orientation of what is placed (src/sim/facing.js): R or the "Tourner" button turns it a quarter turn
+
+  // Tools whose thing can be turned.
+  static ROTATABLE = new Set(['snack', 'souvenir', 'decoration', 'decor', 'shelter']);
+
+  // The turn it will be placed with on this tile: the one chosen, else as it comes (a stand faces the path,
+  // a shelter's mouth +y; a decoration has none: null, as it comes).
+  placeTurns(tile) {
+    if (this.tool.rot != null) return this.tool.rot;
+    if (this.tool.type === 'snack' || this.tool.type === 'souvenir') return tile ? faceToPath(this.world.grid, tile.tx, tile.ty, tile.tx, tile.ty) : 0;
+    if (this.tool.type === 'shelter') return 0;
+    return null;
+  }
+
+  // The turn after a quarter turn more (from the one it would have on the last pointed tile).
+  nextTurns() {
+    return ((this.placeTurns(this.lastTile) ?? 0) + 1) % 4;
+  }
+
   // The price of the path or enclosure being dragged, in the hint (red when too expensive).
   showCost(text, cost) {
     this.ui.hint(text, !this.world.wallet.canAfford(cost));
   }
 
-  // The tiles of the placement preview (green `ok`: the tool can be used there), drawn by the 3D view.
+  // The tiles of the placement preview (green `ok`: the tool can be used there), drawn by the 3D view;
+  // `cells.arrow`: where the thing will face ({ x, y, q, size }: centre in tiles, quarter turns, tiles across).
   ghostCells(tile) {
+    this.lastTile = tile;
+    const cells = this.ghostTiles(tile);
+    if (GameScene.ROTATABLE.has(this.tool.type) && this.world.grid.inBounds(tile.tx, tile.ty)) {
+      const q = this.placeTurns(tile);
+      const n = this.tool.type === 'shelter' ? BALANCE.shelterSize : 1;
+      if (q != null) cells.arrow = { x: tile.tx + (n - 1) / 2, y: tile.ty + (n - 1) / 2, q, size: n };
+    }
+    return cells;
+  }
+
+  ghostTiles(tile) {
     const cells = [];
     const { grid } = this.world;
     const type = this.tool.type;
@@ -534,6 +582,20 @@ export class GameScene extends Phaser.Scene {
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (grid.inBounds(x, y)) diamondAt(x, y, ok);
       const cost = enclosurePrice(this.dragStart.tx, this.dragStart.ty, tile.tx, tile.ty);
       this.showCost(tr('cost.enclosure', { w: x1 - x0 + 1, h: y1 - y0 + 1, cost: fmtCost(cost) }), cost);
+      return cells;
+    }
+    if (type === 'bridge') {
+      // the bridge being drawn: green, or its faulty tiles in red with the reason
+      if (!this.bridgeTrace) {
+        if (grid.inBounds(tile.tx, tile.ty)) diamondAt(tile.tx, tile.ty, grid.isWalkable(tile.tx, tile.ty) || grid.isFree(tile.tx, tile.ty));
+        this.ui.hint(tr('tool.bridgeHint'));
+        return cells;
+      }
+      const r = checkBridge(grid, this.world.builder, this.bridgeTrace);
+      const bad = new Set((r.bad ?? []).map((c) => `${c.tx},${c.ty}`));
+      for (const c of this.bridgeTrace) diamondAt(c.tx, c.ty, r.ok || (!bad.has(`${c.tx},${c.ty}`) && bad.size > 0));
+      if (r.ok) this.showCost(tr('cost.bridge', { n: r.deck.length, cost: fmtCost(r.cost) }), r.cost);
+      else this.ui.hint(tr(`error.${r.reason}`), true);
       return cells;
     }
     if (type === 'path' && this.pathStart) {

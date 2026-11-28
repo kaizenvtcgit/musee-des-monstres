@@ -44,6 +44,17 @@ export class World {
     this.builder.onEnclosuresMerged = (fromId, toId) => {
       for (const m of this.monsters.values()) if (m.enclosureId === fromId) m.enclosureId = toId;
     };
+    // who stands on a bridge taken down gets off at its nearest end
+    this.builder.onBridgeRemoved = (b) => {
+      for (const p of [...this.visitors, ...this.keepers]) {
+        const tx = Math.round(p.pos.x), ty = Math.round(p.pos.y);
+        if (!b.deck.some((c) => c.tx === tx && c.ty === ty)) continue;
+        const s = [...b.stairs].sort((a, c) => Math.hypot(a.tx - tx, a.ty - ty) - Math.hypot(c.tx - tx, c.ty - ty))[0];
+        p.pos = { x: s.tx, y: s.ty };
+        p.tile = { tx: s.tx, ty: s.ty };
+        p.path = null;
+      }
+    };
     this.builder.isBlocked = (x, y) => {
       for (const m of this.monsters.values()) {
         if (m.state !== 'escaped') continue;

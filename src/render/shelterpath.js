@@ -20,18 +20,23 @@ export const SHELTER_FACE = 1.25;
 export const SHELTER_FACE_BY_FAMILY = { ice: 1.65, forest: 1.7 };
 const faceOf = (sh) => SHELTER_FACE_BY_FAMILY[sh?.family] ?? SHELTER_FACE;
 
+import { turnOffset, unturnOffset } from '../sim/facing.js';
+
 // Room the shelter takes for the monsters walking around (tile units, from its centre).
 export const shelterRadius = (sh, n) => (faceOf(sh) - 0.05) * modelScale(sh, n);
 
+// The spots are in the shelter's own frame (its mouth toward +y); `q` is its turn (src/sim/facing.js):
+// stepShelterVisit turns the monster into that frame and back.
 export function shelterSpots(sh, n) {
   const half = (n - 1) / 2;
   const cx = sh.tx + half, cy = sh.ty + half;
+  const q = sh.rot ?? 0;
   const k = modelScale(sh, n);
   const face = faceOf(sh) * k;
   const mouthY = cy + Math.max(0.975, faceOf(sh) - 0.35) * k;
   const r = (faceOf(sh) + 0.25) * k; // half the size of the rock
   return {
-    cx, cy, n,
+    cx, cy, n, q,
     rect: { x0: cx - r, x1: cx + r, y0: cy - r, y1: cy + r },
     faceY: cy + face, // the rock face around the mouth
     mouth: { x: cx, y: mouthY }, // resting at the entrance, still in the light
@@ -61,6 +66,17 @@ function routeToFront(p, s) {
 // Returns { atRest, dark, tunnel } where dark goes from 0 at the mouth to 1 deep inside and tunnel says
 // it is on the line through the mouth (in front of it or in it).
 export function stepShelterVisit(v, s, want, speed, dt) {
+  if (!s.q) return stepLocal(v, s, want, speed, dt);
+  // a turned shelter: the same walk, in its own frame
+  const toLocal = (p) => { const o = unturnOffset(p.x - s.cx, p.y - s.cy, s.q); return { x: s.cx + o.dx, y: s.cy + o.dy }; };
+  const toWorld = (p) => { const o = turnOffset(p.x - s.cx, p.y - s.cy, s.q); return { x: s.cx + o.dx, y: s.cy + o.dy }; };
+  const local = { ...v, ...toLocal(v) }; // (its route stays in the shelter's frame)
+  const r = stepLocal(local, s, want, speed, dt);
+  Object.assign(v, local, toWorld(local));
+  return r;
+}
+
+function stepLocal(v, s, want, speed, dt) {
   let budget = speed * dt;
   const moveTo = (t) => {
     const dx = t.x - v.x, dy = t.y - v.y, d = Math.hypot(dx, dy);
