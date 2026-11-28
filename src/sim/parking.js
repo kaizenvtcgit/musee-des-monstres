@@ -6,7 +6,8 @@
 // Layout (tiles, x0 / y0 = top-left corner, y0 = the row just outside the park):
 //   column 0: the driveway, from the road up to the aisle;
 //   columns 1..6: rows y0, y0 + 1: 6 places (nose toward the park); row y0 + 2: the aisle;
-//                 rows y0 + 3, y0 + 4: 6 places (nose toward the road);
+//                 rows y0 + 3, y0 + 4: 5 places (nose toward the road; the first one is left free for the
+//                 arm of the barrier, at the bottom of the driveway, with the attendant's booth beside it);
 //   below it, the road (two lanes, half a tile lower), across the whole map: cars come from the left on the
 //   far lane and leave to the left on the near one.
 import { BALANCE } from '../config/balance.js';
@@ -14,7 +15,9 @@ import { WALK_SPEED } from './visitors.js';
 
 export const PARKING_W = 7;
 export const PARKING_H = 5;
-export const PLACES = 12;
+// (the first place of the bottom row stays empty: the arm of the barrier sweeps over it)
+const UNUSED = new Set([6]);
+export const PLACES = 12 - UNUSED.size;
 const CAR_SPEED = 2.4; // tiles / s (6 m/s, slow in a car park)
 const RING = 7; // tiles of lawn and forest around the park (the edge of the map)
 const OFF = 6; // tiles beyond the edge of the map where cars appear and vanish
@@ -115,6 +118,11 @@ export function pointAlong(path, s) {
   return { x: last.x, y: last.y, dx: 0, dy: 1, back: false };
 }
 
+// The barrier across the driveway, at the edge of the road (its arm opens for each car going through).
+export function barrierPoint(p) {
+  return { x: p.x0, y: p.y0 + PARKING_H - 0.62 };
+}
+
 // Where the passengers get out and back in: beside the car, in the aisle.
 export function doorOf(p, i) {
   const pl = placeOf(p, i);
@@ -136,7 +144,7 @@ export function freePlace(world) {
   const p = world.parking;
   if (!p) return -1;
   const taken = new Set(p.cars.map((c) => c.place));
-  const order = [...Array(PLACES).keys()].sort((a, b) => Math.abs(placeOf(p, a).x - world.entrance.tx) - Math.abs(placeOf(p, b).x - world.entrance.tx) || a - b);
+  const order = [...Array(12).keys()].filter((k) => !UNUSED.has(k)).sort((a, b) => Math.abs(placeOf(p, a).x - world.entrance.tx) - Math.abs(placeOf(p, b).x - world.entrance.tx) || a - b);
   return order.find((k) => !taken.has(k)) ?? -1;
 }
 

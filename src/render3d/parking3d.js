@@ -3,7 +3,7 @@
 // CC0) follow the way the game gives them, turning smoothly, backing out of their place, wheels turning.
 import * as THREE from 'three';
 import {
-  PARKING_W, PARKING_H, CAR_MODELS, roadRow, ROAD_HALF, placeOf, arrivalPath, departurePath, pointAlong,
+  PARKING_W, PARKING_H, CAR_MODELS, roadRow, ROAD_HALF, placeOf, arrivalPath, departurePath, pointAlong, barrierPoint,
 } from '../sim/parking.js';
 
 const RING = 7; // tiles of lawn and forest around the park
@@ -41,28 +41,6 @@ function slab(x0, z0, x1, z1, y, mat, rep = 4) {
   m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2);
   m.receiveShadow = true;
   return m;
-}
-
-// The blue "P" sign of the car park.
-function signTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = '#1f5fbf';
-  g.beginPath();
-  g.roundRect(6, 6, 116, 116, 14);
-  g.fill();
-  g.strokeStyle = '#fff';
-  g.lineWidth = 6;
-  g.stroke();
-  g.fillStyle = '#fff';
-  g.font = 'bold 92px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText('P', 64, 70);
-  const tx = new THREE.CanvasTexture(c);
-  tx.colorSpace = THREE.SRGBColorSpace;
-  return tx;
 }
 
 export class Parking3D {
@@ -115,15 +93,40 @@ export class Parking3D {
     kerb.position.set((left + right) / 2, 0.075, top + 0.125);
     kerb.castShadow = kerb.receiveShadow = true;
     g.add(kerb);
-    // the "P" sign at the driveway, and two street lamps
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 8), new THREE.MeshStandardMaterial({ color: 0x8a8d91, metalness: 0.6, roughness: 0.4 }));
-    post.position.set(left - 0.4, 1.3, bottom - 0.6);
-    post.castShadow = true;
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshStandardMaterial({ map: signTexture(), side: THREE.DoubleSide, roughness: 0.5 }));
-    sign.position.set(left - 0.4, 2.7, bottom - 0.6);
-    sign.rotation.y = Math.PI / 4;
-    sign.castShadow = true;
-    g.add(post, sign);
+    // the barrier across the driveway, at the edge of the road (its box on the lawn, its arm over the driveway
+    // and the free place beside it), and the attendant's booth beside it, its sign toward the road
+    const bp = barrierPoint(p);
+    const boxX = X(bp.x) - T / 2 - 0.35, barZ = Z(bp.y);
+    this.barrier = null;
+    this.guard = null;
+    this.park.model('parking-barrier').then((m) => {
+      if (this.lot !== g) return;
+      const obj = m.scene.clone(true);
+      obj.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+      obj.position.set(boxX, 0, barZ);
+      const mixer = new THREE.AnimationMixer(obj);
+      const clip = m.animations.find((c) => c.name === 'Ouverture') ?? m.animations[0];
+      const action = clip ? mixer.clipAction(clip) : null;
+      if (action) { action.play(); action.timeScale = 0; }
+      this.barrier = { obj, mixer, action, dur: clip?.duration ?? 1, open: 0 };
+      g.add(obj);
+    }).catch((err) => console.error(err));
+    this.park.model('parking-booth').then((m) => {
+      if (this.lot !== g) return;
+      const booth = m.scene.clone(true);
+      booth.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+      booth.position.set(boxX - 0.45 - 1.35, 0, barZ - 1.0);
+      g.add(booth);
+      // the attendant, at his place in it
+      const spot = booth.getObjectByName('Position_Gardien');
+      if (!spot) return;
+      this.park.spawn('person-men-worker', 1.78).then((body) => {
+        if (this.lot !== g) return;
+        spot.add(body.obj);
+        this.park.play(body, 'Idle');
+        this.guard = body;
+      }).catch(() => {});
+    }).catch((err) => console.error(err));
     this.park.props().then((props) => {
       const lamp = props.get('streetLamp');
       if (!lamp || this.lot !== g) return;
@@ -161,6 +164,7 @@ export class Parking3D {
       this.buildLot();
       this.park.buildTrees(); // the trees make room for it
     }
+    this.updateGate(p, dt);
     const seen = new Set();
     for (const car of p?.cars ?? []) {
       seen.add(car.id);
@@ -228,6 +232,8 @@ export class Parking3D {
       // facing where it goes (backing up: the other way)
       heading = Math.atan2(pt.dx, pt.dy) + (back ? Math.PI : 0);
     }
+    e.tile = { x, y };
+    e.moving = car.state !== 'parked';
     const nx = x * T, nz = y * T;
     const moved = e.last ? Math.hypot(nx - e.last.x, nz - e.last.z) : 0;
     e.last = { x: nx, z: nz };
@@ -240,10 +246,24 @@ export class Parking3D {
     for (const w of e.wheels) w.rotation.x += (back ? -1 : 1) * (moved / WHEEL_RADIUS);
   }
 
+  // The barrier opens when a car comes near it (driving in or out), and closes behind it; the attendant breathes.
+  updateGate(p, dt) {
+    const speed = this.park.world.speed || 0;
+    if (this.guard) this.guard.mixer.update(dt);
+    const b = this.barrier;
+    if (!b?.action || !p) return;
+    const bp = barrierPoint(p);
+    const near = [...this.cars.values()].some((e) => e.tile && e.moving && Math.hypot(e.tile.x - bp.x, e.tile.y - bp.y) < 3.5);
+    const step = (dt * speed) / b.dur;
+    b.open = Math.max(0, Math.min(1, b.open + (near ? step : -step)));
+    b.action.time = b.open * b.dur * 0.999;
+    b.mixer.update(0);
+  }
+
   // The tiles of the road and the car park, kept free of trees.
   blocks(tx, ty) {
     const { grid, parking: p } = this.park.world;
     if (Math.abs(ty - roadRow(grid)) < ROAD_HALF + 0.6) return true;
-    return !!p && tx > p.x0 - 1.4 && tx < p.x0 + PARKING_W + 0.4 && ty > p.y0 - 1 && ty < p.y0 + PARKING_H + 0.4;
+    return !!p && tx > p.x0 - 2.8 && tx < p.x0 + PARKING_W + 0.4 && ty > p.y0 - 1 && ty < p.y0 + PARKING_H + 0.4;
   }
 }

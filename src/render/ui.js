@@ -5,6 +5,7 @@ import { SPECIES, LOCATIONS, HABITAT_FAMILIES, offeredHabitatsOfFamily } from '.
 import { ENCLOSURE_DECOR, decorForHabitat, SHELTERS } from '../config/decor.js';
 import { OBJECTIVES } from '../sim/objectives.js';
 import { realKey } from './sprites.js';
+import { PLACES } from '../sim/parking.js';
 import { monsterTextureKey } from './textures.js';
 import { capacity, canBreed } from '../sim/breeding.js';
 import { eraseGame } from '../save/storage.js';
@@ -418,7 +419,7 @@ class UI {
       if (!p) return null;
       const used = p.cars.filter((c) => c.state !== 'leaving').length;
       return `${close}<h3><img class="portrait" src="${this.img('parking')}">${esc(t('parking.title'))}</h3>
-        <div class="row">${esc(t('parking.places', { n: used, max: 12 }))}${bar((used / 12) * 100)}</div>
+        <div class="row">${esc(t('parking.places', { n: used, max: PLACES }))}${bar((used / PLACES) * 100)}</div>
         <div class="row">${esc(t('parking.bonus', { n: Math.round((BALANCE.parkingVisitorBonus - 1) * 100) }))}</div>
         <div class="row"><button data-action="demolishParking">${esc(t('parking.demolish', { n: Math.round(p.price * BALANCE.demolishRefund) }))}</button></div>`;
     }

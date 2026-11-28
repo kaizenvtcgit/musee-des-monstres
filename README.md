@@ -67,8 +67,9 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
   visiteurs y dépensent leur argent.
 - **Parking** (1 500 pièces, un seul) : à poser sur l'herbe devant l'entrée, entre le parc et la route (pas devant le
   portail). Les visiteurs viennent 30 % plus souvent, en voiture : elle arrive par la route, se gare, ses passagers
-  (1 à 3) marchent jusqu'à l'entrée, et quand ils sont tous revenus elle sort en marche arrière et repart. Plein
-  (12 places), les visiteurs arrivent à pied comme avant. Clic dessus : sa fiche (places occupées, démolition).
+  (1 à 3) marchent jusqu'à l'entrée, et quand ils sont tous revenus elle sort en marche arrière et repart. La
+  barrière de la voie d'accès se lève devant chaque voiture, à côté de la guérite et de son gardien. Plein
+  (11 places), les visiteurs arrivent à pied comme avant. Clic dessus : sa fiche (places occupées, démolition).
 - **Gardien** : rattrape les monstres évadés (un « ! » au-dessus de sa tête pendant la poursuite).
 - **Démolir** : retire une allée, un enclos, un bâtiment ou une décoration.
 
@@ -144,6 +145,10 @@ un aperçu montre les cases (vert : possible, rouge : impossible). **Échap** re
 - Visiteurs et gardiens : packs « Ultimate Modular Men / Women » de [Quaternius](https://quaternius.com) (licence CC0).
 - Voitures du parking : « [Cars Pack](https://quaternius.com/packs/cars.html) » de Quaternius (licence CC0),
   originaux dans `models/cars/`.
+- Barrière et guérite du parking : modèles faits pour le projet (`models/parking/barriere_parking_musee.glb`, avec ses
+  animations « Ouverture » et « Fermeture », et `models/parking/guerite_musee_amenagee.glb`), allégés avec
+  gltf-transform en `parking-barrier.glb.json` et `parking-booth.glb.json` (garder `--prune false` pour le repère
+  `Position_Gardien`).
 - Distributeur de billets : modèle fourni pour le projet (`models/parking/ATM.fbx` et ses textures), refait en
   `src/assets/3d/atm.glb.json` par `scripts/3d/atm-to-glb.cjs` (textures 512 px).
 - Bibliothèques : [three.js](https://threejs.org) (3D) et [Phaser](https://phaser.io) (boucle de jeu), licence MIT.
